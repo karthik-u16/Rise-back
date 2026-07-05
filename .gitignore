@@ -1,0 +1,28 @@
+# Environment & secrets — never commit these
+.env
+*.env
+
+# SQLite database — each deployment has its own
+*.db
+*.sqlite
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db

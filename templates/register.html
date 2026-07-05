@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Register — Rise Back</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root{
+            --void:#08080d; --panel:#13131b; --ember:#ff5000;
+            --gold:#d4a437; --gold-light:#f3cf6e; --ink:#f1ece0; --ink-dim:#8d8a9a; --line:rgba(212,164,55,.25);
+        }
+        *{ box-sizing:border-box; }
+        body{
+            margin:0; min-height:100vh;
+            display:flex; align-items:center; justify-content:center;
+            background:
+                radial-gradient(ellipse 800px 500px at 15% 10%, rgba(255,80,0,.10), transparent 60%),
+                radial-gradient(ellipse 800px 500px at 90% 90%, rgba(212,164,55,.08), transparent 60%),
+                var(--void);
+            color:var(--ink); font-family:'Rajdhani', sans-serif; padding:24px;
+        }
+        .card{ width:380px; background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:36px 32px; }
+        .eyebrow{ font-size:11px; letter-spacing:3px; color:var(--gold); text-transform:uppercase; font-weight:700; text-align:center; }
+        h1{ font-family:'Cinzel',serif; font-size:26px; text-align:center; margin:8px 0 26px; letter-spacing:1px; }
+        label{ font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-dim); font-weight:700; display:block; margin-bottom:6px; }
+        input{
+            width:100%; padding:12px 14px; margin-bottom:18px;
+            background:#1a1a23; border:1px solid var(--line); border-radius:10px;
+            color:var(--ink); font-family:'Rajdhani',sans-serif; font-size:15px; font-weight:600;
+        }
+        input:focus{ outline:none; border-color:var(--gold); box-shadow:0 0 0 3px rgba(212,164,55,.15); }
+        button{
+            width:100%; padding:14px; border:none; border-radius:10px; cursor:pointer;
+            background:linear-gradient(135deg,var(--ember),#c83e00); color:#1a0a00;
+            font-weight:800; font-size:14px; letter-spacing:1px; text-transform:uppercase;
+            box-shadow:0 0 20px rgba(255,80,0,.35);
+        }
+        button:hover{ filter:brightness(1.08); }
+        .foot{ text-align:center; margin-top:18px; font-size:13px; }
+        .foot a{ color:var(--gold-light); text-decoration:none; font-weight:700; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="eyebrow">🛡 Forge Your Legend</div>
+        <h1>Create Warrior</h1>
+
+        <form method="POST">
+            <label>Username</label>
+            <input type="text" name="username" placeholder="Choose your warrior name" required>
+
+            <label>Password</label>
+            <input type="password" name="password" placeholder="••••••••" required>
+
+            <button type="submit">Register</button>
+        </form>
+
+        <div class="foot">Already a warrior? <a href="/login">Return to the realm</a></div>
+    </div>
+</body>
+</html>

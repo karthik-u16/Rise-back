@@ -1,0 +1,1974 @@
+from flask import session
+from flask import Flask, render_template, redirect, url_for, request, jsonify
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import date, timedelta
+import json
+import os
+import random
+
+app = Flask(__name__)
+
+# Secret key: reads from environment variable in production, fallback for local dev only
+app.secret_key = os.environ.get("SECRET_KEY", "riseback_dev_key_change_in_prod")
+
+from flask_sqlalchemy import SQLAlchemy
+
+# Production: set DATABASE_URL env var to a PostgreSQL connection string (e.g. from Render/Railway)
+# Local dev:  falls back to SQLite automatically — no setup needed
+_db_url = os.environ.get("DATABASE_URL", "sqlite:///riseback.db")
+
+# SQLAlchemy 2.x dropped the legacy "postgres://" scheme — fix it transparently
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+db = SQLAlchemy(app)
+
+PROGRESS_FILE = "riseback_progress.json"
+
+REGION_CONFIG = {
+    1: {
+        "name": "Foundation Camp",
+        "weeks": 2,
+        "target_progress": 8,
+        "challenges": [
+            {"icon": "🧘", "name": "Breathing Reset", "focus": "Mobility", "desc": "5 minutes of calm breathwork to center your body."},
+            {"icon": "🦵", "name": "Bodyweight Squat Ladder", "focus": "Legs", "desc": "Build a solid base with 3 rounds of 10 controlled squats."},
+            {"icon": "💪", "name": "Incline Push-Up Flow", "focus": "Push", "desc": "Work light upper-body strength with 3 steady sets of incline push-ups."},
+            {"icon": "🪢", "name": "Band Row Builder", "focus": "Pull", "desc": "Train your posture and pull strength with 15 slow rows."},
+            {"icon": "🧱", "name": "Plank Hold", "focus": "Core", "desc": "Hold a strong plank for 30 seconds to stabilize your midsection."},
+            {"icon": "🟠", "name": "Shoulder Tap Circuit", "focus": "Shoulders", "desc": "Build shoulder stability with 20 alternating taps."},
+            {"icon": "🏃", "name": "Jog in Place", "focus": "Cardio", "desc": "Complete a real jog or sustained in-place cardio block before moving on."},
+            {"icon": "⚡", "name": "Mini Mobility Finish", "focus": "Cardio", "desc": "Finish the week with a brisk walk and light mobility flow."},
+        ],
+    },
+    2: {
+        "name": "Combat Valley",
+        "weeks": 4,
+        "target_progress": 12,
+        "challenges": [
+            {"icon": "💥", "name": "Push-Up Circuit", "focus": "Push", "desc": "Complete 3 rounds of 10 clean push-ups with good form."},
+            {"icon": "🪢", "name": "Bent-Over Rows", "focus": "Pull", "desc": "Drive your back and pull strength through 20 reps."},
+            {"icon": "🦵", "name": "Walking Lunges", "focus": "Legs", "desc": "Walk strong through 20 lunges to fire your lower body."},
+            {"icon": "🟠", "name": "Pike Shoulder Press", "focus": "Shoulders", "desc": "Hold the pike position and press for 12 controlled reps."},
+            {"icon": "🔥", "name": "Jump Rope Burst", "focus": "Cardio", "desc": "Push your pace for 2 minutes of jump rope movement."},
+            {"icon": "💪", "name": "Decline Push-Up Prep", "focus": "Push", "desc": "Use a sturdy surface and train the lower chest with 8 to 12 reps."},
+            {"icon": "🧗", "name": "Inverted Row Drill", "focus": "Pull", "desc": "Build pulling strength with 12 controlled bodyweight rows."},
+            {"icon": "🚀", "name": "Reverse Lunge Set", "focus": "Legs", "desc": "Complete 3 rounds of 10 reverse lunges with control."},
+            {"icon": "🏋️", "name": "Wall Shoulder Press", "focus": "Shoulders", "desc": "Press the bodyweight overhead with slow tempo reps."},
+            {"icon": "⚡", "name": "Burpee Intervals", "focus": "Cardio", "desc": "Finish strong with 8 burpees every minute for 4 minutes."},
+            {"icon": "🧘", "name": "Recovery Flow", "focus": "Mobility", "desc": "Recover with mobility and breathing after a hard training block."},
+            {"icon": "🏃‍♂️", "name": "Tempo Run", "focus": "Cardio", "desc": "Run for 15 minutes at a strong pace without rushing."},
+        ],
+    },
+    3: {
+        "name": "Elite Arena",
+        "weeks": 8,
+        "target_progress": 16,
+        "challenges": [
+            {"icon": "🔻", "name": "Diamond Push-Ups", "focus": "Push", "desc": "Tighten your form with 20 diamond-style push-ups."},
+            {"icon": "🧗", "name": "Chin-Ups", "focus": "Pull", "desc": "Strengthen your back with 10 challenging chin-ups."},
+            {"icon": "🎯", "name": "Bulgarian Split Squats", "focus": "Legs", "desc": "Perform 16 split squats for focused leg power."},
+            {"icon": "🟡", "name": "Pike Shoulder Press", "focus": "Shoulders", "desc": "Hold the pike position and press for 12 reps."},
+            {"icon": "🏃‍♂️", "name": "400m Run", "focus": "Cardio", "desc": "Complete a fast 400m run or equivalent sprint set."},
+            {"icon": "💥", "name": "Close-Grip Push-Up Ladder", "focus": "Push", "desc": "Move through 3 rounds of close-grip push-ups with control."},
+            {"icon": "🪢", "name": "Chest-Supported Row", "focus": "Pull", "desc": "Train back strength with 12 slow rows and full range."},
+            {"icon": "🦵", "name": "Step-Up Strength", "focus": "Legs", "desc": "Drive through 12 step-ups per leg for balance and power."},
+            {"icon": "🤸", "name": "Handstand Hold", "focus": "Shoulders", "desc": "Hold the handstand for 20 seconds to test balance."},
+            {"icon": "⚡", "name": "Sprint Intervals", "focus": "Cardio", "desc": "Complete alternating sprint and recovery sets."},
+            {"icon": "🧘", "name": "Flow Reset", "focus": "Mobility", "desc": "Use this reset block to move better and stay fresh."},
+            {"icon": "💨", "name": "EMOM Burpees", "focus": "Cardio", "desc": "Push your endurance with 10 burpees each minute."},
+            {"icon": "🔺", "name": "Wide Push-Up Set", "focus": "Push", "desc": "Train the chest and shoulders with wide push-ups."},
+            {"icon": "🪝", "name": "Neutral-Grip Pull", "focus": "Pull", "desc": "Hold your back tight and pull with control."},
+            {"icon": "🏋️", "name": "Goblet Squat Press", "focus": "Legs", "desc": "Combine squatting and pressing for power and control."},
+            {"icon": "🧱", "name": "Side Plank Hold", "focus": "Core", "desc": "Hold each side for 30 seconds and build trunk stiffness."},
+        ],
+    },
+    4: {
+        "name": "Legend Citadel",
+        "weeks": 16,
+        "target_progress": 20,
+        "challenges": [
+            {"icon": "⬇️", "name": "Decline Push-Ups", "focus": "Push", "desc": "Challenge your upper chest with 20 decline push-ups."},
+            {"icon": "↕️", "name": "Inverted Rows", "focus": "Pull", "desc": "Build pulling strength with 15 bodyweight rows."},
+            {"icon": "🚀", "name": "Squat Jumps", "focus": "Legs", "desc": "Explode through 15 squat jumps for power."},
+            {"icon": "🏋️", "name": "Shoulder Presses", "focus": "Shoulders", "desc": "Press through 20 reps with controlled shoulder strength."},
+            {"icon": "💨", "name": "EMOM Burpees", "focus": "Cardio", "desc": "Push your endurance with 10 burpees each minute."},
+            {"icon": "🔥", "name": "One-Arm Push-Up Prep", "focus": "Push", "desc": "Build elite pushing strength with progression work."},
+            {"icon": "💪", "name": "Weighted Pull-Ups", "focus": "Pull", "desc": "Add resistance to 12 strong pull-ups."},
+            {"icon": "🦵", "name": "Pistol Squats", "focus": "Legs", "desc": "Master single-leg control with 10 pistol squat reps."},
+            {"icon": "🤸", "name": "Handstand Hold", "focus": "Shoulders", "desc": "Hold the handstand for 20 seconds to test balance."},
+            {"icon": "⚡", "name": "Sprint Intervals", "focus": "Cardio", "desc": "Complete alternating sprint and recovery sets."},
+            {"icon": "🥋", "name": "Tempo Push-Up Ladder", "focus": "Push", "desc": "Push slowly and deliberately to sharpen form and strength."},
+            {"icon": "🪝", "name": "Weighted Row Set", "focus": "Pull", "desc": "Use resistance and drive the elbows back under tension."},
+            {"icon": "🦿", "name": "Single-Leg Romanian Deadlift", "focus": "Legs", "desc": "Train balance and posterior chain with clean single-leg reps."},
+            {"icon": "🛡", "name": "Overhead Stability Hold", "focus": "Shoulders", "desc": "Hold a stable overhead position and build control."},
+            {"icon": "🏃", "name": "Hill Sprints", "focus": "Cardio", "desc": "Use short uphill sprints to build power and durability."},
+            {"icon": "🧘", "name": "Deep Recovery Reset", "focus": "Mobility", "desc": "Use a focused mobility block to stay healthy through hard training."},
+            {"icon": "💥", "name": "Hybrid Push Circuit", "focus": "Push", "desc": "Combine push-ups and dips for a demanding upper-body finisher."},
+            {"icon": "🪢", "name": "Pull-Up Progression", "focus": "Pull", "desc": "Use assisted work and strengthen the full pull motion."},
+            {"icon": "🦵", "name": "Jump Squat Finish", "focus": "Legs", "desc": "Finish the week with explosive squat jumps and good form."},
+            {"icon": "⚔", "name": "Warrior Cardio Circuit", "focus": "Cardio", "desc": "Finish with a serious conditioning circuit that tests your grit."},
+        ],
+    },
+    5: {
+        "name": "Legacy Throne",
+        "weeks": 32,
+        "target_progress": 24,
+        "challenges": [
+            {"icon": "👑", "name": "One-Arm Push-Up Prep", "focus": "Push", "desc": "Build elite pushing strength with progression work."},
+            {"icon": "🏆", "name": "Weighted Pull-Ups", "focus": "Pull", "desc": "Add resistance to 12 strong pull-ups."},
+            {"icon": "🦿", "name": "Pistol Squats", "focus": "Legs", "desc": "Master single-leg control with 10 pistol squat reps."},
+            {"icon": "🤸", "name": "Handstand Hold", "focus": "Shoulders", "desc": "Hold the handstand for 20 seconds to test balance."},
+            {"icon": "⚡", "name": "Sprint Intervals", "focus": "Cardio", "desc": "Complete alternating sprint and recovery sets."},
+            {"icon": "🔥", "name": "Explosive Push-Up Ladder", "focus": "Push", "desc": "Move through strong explosive push-up reps with clean form."},
+            {"icon": "🪢", "name": "Weighted Row Mastery", "focus": "Pull", "desc": "Drive the chest up and pull through a full range of motion."},
+            {"icon": "🦵", "name": "Split Squat Mastery", "focus": "Legs", "desc": "Develop controlled power in single-leg squatting."},
+            {"icon": "🛡", "name": "Overhead Press Endurance", "focus": "Shoulders", "desc": "Hold a strong overhead position through a demanding set."},
+            {"icon": "🏃", "name": "Tempo Hill Run", "focus": "Cardio", "desc": "Train your engine with a controlled hill run session."},
+            {"icon": "🧘", "name": "Longevity Mobility Flow", "focus": "Mobility", "desc": "Use this flow to maintain movement quality and durability."},
+            {"icon": "💥", "name": "Advanced Push Circuit", "focus": "Push", "desc": "Stack challenging push variations into a serious upper-body block."},
+            {"icon": "🪝", "name": "Pull-Up Strength Test", "focus": "Pull", "desc": "Push your pull-up volume and strength with purpose."},
+            {"icon": "🦿", "name": "Single-Leg Romanian Deadlift", "focus": "Legs", "desc": "Train balance and posterior chain with clean single-leg reps."},
+            {"icon": "♻️", "name": "Shoulder Stability Circuit", "focus": "Shoulders", "desc": "Build resilience through deliberate shoulder-strength work."},
+            {"icon": "⚔", "name": "Warrior Conditioning", "focus": "Cardio", "desc": "Finish the week with a stamina challenge that tests grit."},
+            {"icon": "🔥", "name": "Elite Push Finisher", "focus": "Push", "desc": "Use a tough push finisher to close the week strong."},
+            {"icon": "🪢", "name": "Pull Strength Builder", "focus": "Pull", "desc": "Stack rows and pull-ups into a back-focused session."},
+            {"icon": "🦵", "name": "Power Squat Circuit", "focus": "Legs", "desc": "Combine squat strength with controlled explosive reps."},
+            {"icon": "🏃", "name": "Endurance Builder", "focus": "Cardio", "desc": "Train your breath, pacing, and durability for the long haul."},
+            {"icon": "🧘", "name": "Recovery Reset", "focus": "Mobility", "desc": "Use this block to recover and keep your body moving well."},
+            {"icon": "⚔", "name": "Final Ascension Circuit", "focus": "Cardio", "desc": "Test your endurance and discipline one more time."},
+            {"icon": "💪", "name": "Legendary Push Day", "focus": "Push", "desc": "Finish the long cycle with a deliberate push session."},
+            {"icon": "🪢", "name": "Legendary Pull Day", "focus": "Pull", "desc": "Push your back strength to the next level."},
+        ],
+    },
+}
+
+
+def get_region_challenges(level):
+    region = REGION_CONFIG.get(level, REGION_CONFIG[1])
+    return region["challenges"]
+
+
+def get_region_target(level):
+    region = REGION_CONFIG.get(level, REGION_CONFIG[1])
+    return region["target_progress"]
+
+
+def get_region_weeks(level):
+    region = REGION_CONFIG.get(level, REGION_CONFIG[1])
+    return region["weeks"]
+
+
+def award_region_progress(progress, amount=1):
+    if not progress:
+        return progress
+
+    progress.completed += amount
+    target = get_region_target(progress.level)
+
+    if progress.completed >= target:
+        progress.completed = 0
+        progress.level = min(5, progress.level + 1)
+
+    return progress
+
+REGIONS = {
+    1: {"name": "🏕 Foundation Camp", "next": "⚔ Combat Valley"},
+    2: {"name": "⚔ Combat Valley", "next": "🏛 Elite Arena"},
+    3: {"name": "🏛 Elite Arena", "next": "👑 Legend Citadel"},
+    4: {"name": "👑 Legend Citadel", "next": "🔥 Legacy Throne"},
+    5: {"name": "🔥 Legacy Throne", "next": "MAX REGION"},
+}
+
+BOSSES = {
+    1: {
+        "name": "Foundation Guardian",
+        "tasks": ["50 Squats", "25 Pushups", "30s Plank"],
+        "reward": 20,
+    },
+    2: {
+        "name": "Combat Warlord",
+        "tasks": ["75 Squats", "50 Pushups", "60s Plank"],
+        "reward": 30,
+    },
+    3: {
+        "name": "Elite Champion",
+        "tasks": ["100 Squats", "75 Pushups", "90s Plank"],
+        "reward": 40,
+    },
+    4: {
+        "name": "Citadel King",
+        "tasks": ["120 Squats", "100 Pushups", "120s Plank"],
+        "reward": 50,
+    },
+    5: {
+        "name": "Legacy Throne Guardian",
+        "tasks": ["150 Squats", "125 Pushups", "180s Plank"],
+        "reward": 75,
+    },
+}
+
+BOSS_IMAGES = {
+    1: "bosses/foundation_guardian.png",
+    2: "bosses/combat_warlord.png",
+    3: "bosses/arena_destroyer.png",
+    4: "bosses/legend_emperor.png",
+    5: "bosses/legacy_throne_guardian.png",
+}
+
+ACHIEVEMENTS = {
+    "First Blood": "Complete your first challenge",
+    "Water Warrior": "Drink 2500ml water",
+    "Boss Slayer": "Defeat your first boss",
+    "Iron Streak": "Reach a 7 day streak",
+    "Rise Back Legend": "Reach 75 XP",
+    "Iron Will": "Log your first workout",
+}
+
+REWARDS = {
+    1: {
+        "name": "💪 Confidence Core",
+        "description": "Believe in your ability to improve.",
+    },
+    2: {
+        "name": "⚡ Discipline Spark",
+        "description": "Action before motivation You became something no one has else.",
+    },
+    3: {
+        "name": "🦁 Warrior Mindset",
+        "description": "Consistency creates strength your mindset became has an arrow.",
+    },
+    4: {"name": "🛡 Man of Steel Mindset", "description": "Resilience under pressure."},
+    5: {
+        "name": "🔥 Phoenix Man",
+        "description": "You rose from setbacks and rebuilt yourself stronger than before.",
+    },
+}
+
+QUOTES = [
+    "Success starts with self-discipline.",
+    "The body achieves what the mind believes.",
+    "Small steps every day.",
+    "Consistency beats motivation.",
+    "Rise stronger than yesterday.",
+]
+
+WORKOUT_SCHEDULE = {
+    0: {
+        "day": "Monday",
+        "focus": "Push Day",
+        "icon": "💥",
+        "exercises": [
+            "Push Ups",
+            "Bench Press",
+            "Shoulder Press",
+            "Tricep Dips",
+            "Incline Press",
+        ],
+    },
+    1: {
+        "day": "Tuesday",
+        "focus": "Pull Day",
+        "icon": "🪢",
+        "exercises": [
+            "Pull Ups",
+            "Bent-Over Rows",
+            "Bicep Curls",
+            "Lat Pulldown",
+            "Face Pulls",
+        ],
+    },
+    2: {
+        "day": "Wednesday",
+        "focus": "Leg Day",
+        "icon": "🦵",
+        "exercises": [
+            "Squats",
+            "Lunges",
+            "Leg Press",
+            "Calf Raises",
+            "Romanian Deadlift",
+        ],
+    },
+    3: {
+        "day": "Thursday",
+        "focus": "Core & Cardio",
+        "icon": "🔥",
+        "exercises": ["Plank", "Burpees", "Mountain Climbers", "Running", "Jump Rope"],
+    },
+    4: {
+        "day": "Friday",
+        "focus": "Full Body Strength",
+        "icon": "⚔",
+        "exercises": ["Deadlifts", "Push Ups", "Squats", "Rows", "Overhead Press"],
+    },
+    5: {
+        "day": "Saturday",
+        "focus": "Active Recovery",
+        "icon": "🧘",
+        "exercises": ["Stretching", "Yoga Flow", "Light Walk", "Foam Rolling"],
+    },
+    6: {
+        "day": "Sunday",
+        "focus": "Rest Day",
+        "icon": "🛌",
+        "exercises": ["Full Rest", "Light Stretching", "Walk"],
+    },
+}
+
+CATEGORY_CALORIES_PER_MIN = {
+    "Push Day": 7,
+    "Pull Day": 7,
+    "Leg Day": 8,
+    "Core & Cardio": 10,
+    "Full Body Strength": 9,
+    "Active Recovery": 4,
+    "Rest Day": 2,
+    "General": 6,
+}
+
+
+class User(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    username = db.Column(db.String(100), unique=True, nullable=False)
+
+    password = db.Column(db.String(200), nullable=False)
+
+
+class UserProgress(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True)
+
+    level = db.Column(db.Integer, default=1)
+
+    xp = db.Column(db.Integer, default=0)
+
+    streak = db.Column(db.Integer, default=1)
+
+    completed = db.Column(db.Integer, default=0)
+
+
+class UserProfile(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True)
+
+    age = db.Column(db.Integer)
+
+    gender = db.Column(db.String(20))
+
+    height = db.Column(db.Float)
+
+    weight = db.Column(db.Float)
+
+    target_weight = db.Column(db.Float)
+
+    fitness_goal = db.Column(db.String(50))
+
+    activity_level = db.Column(db.String(50))
+
+
+class WeightLog(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+
+    weight = db.Column(db.Float)
+
+    log_date = db.Column(db.Date)
+
+
+class WorkoutLog(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, nullable=False)
+
+    workout_date = db.Column(db.Date, nullable=False)
+
+    exercise_name = db.Column(db.String(150), nullable=False)
+
+    category = db.Column(db.String(50))
+
+    sets = db.Column(db.Integer)
+
+    reps = db.Column(db.Integer)
+
+    weight_kg = db.Column(db.Float)
+
+    duration_minutes = db.Column(db.Integer)
+
+    calories_burned = db.Column(db.Integer)
+
+    notes = db.Column(db.String(255))
+
+
+class WaterTracker(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+
+    water_ml = db.Column(db.Integer, default=0)
+
+
+class MissionProgress(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer)
+
+    mission_name = db.Column(db.String(200))
+
+    completed = db.Column(db.Boolean, default=False)
+
+
+class DailyMission(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer)
+
+    mission_name = db.Column(db.String(200))
+
+    mission_date = db.Column(db.Date)
+
+    completed = db.Column(db.Boolean, default=False)
+
+
+class UserStreak(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, unique=True)
+
+    streak_count = db.Column(db.Integer, default=0)
+
+    last_active = db.Column(db.Date)
+
+
+class BossBattle(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, nullable=False)
+
+    boss_level = db.Column(db.Integer, nullable=False)
+
+    defeated = db.Column(db.Boolean, default=True)
+
+
+class RewardChest(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, nullable=False)
+
+    reward_name = db.Column(db.String(100), nullable=False)
+
+    reward_description = db.Column(db.String(255))
+
+
+class ShadowBoss(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer)
+
+    defeated = db.Column(db.Boolean, default=False)
+
+
+def get_badges(xp):
+
+    badges = [
+        {"name": "MORTAL", "xp": 0},
+        {"name": "WARRIOR", "xp": 15},
+        {"name": "DEMIGOD", "xp": 30},
+        {"name": "GOD", "xp": 50},
+        {"name": "CELESTIAL", "xp": 75},
+    ]
+
+    for badge in badges:
+        badge["unlocked"] = xp >= badge["xp"]
+
+    return badges
+
+
+class Achievement(db.Model):
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    user_id = db.Column(db.Integer, nullable=False)
+
+    achievement_name = db.Column(db.String(100), nullable=False)
+
+
+def get_ai_message(
+    streak,
+    evolution,
+    boss_available,
+    region_name,
+    xp_percent,
+    water_ml=None,
+    water_limit_reached=False,
+    challenge_progress=None,
+    goal_plan=None,
+):
+
+    if boss_available:
+        return (
+            f"⚔ Warrior, the guardian of {region_name} "
+            "has awakened. Victory is the only path forward."
+        )
+
+    if challenge_progress is not None and challenge_progress < 100:
+        return (
+            "🎯 Your daily mission is still active. "
+            "Finish the challenge before tonight and own it."
+        )
+
+    if streak >= 30:
+        return "🔥 Thirty days of discipline. Most people quit. You didn't."
+
+    if streak >= 7:
+        return "💪 Consistency is becoming your identity."
+
+    if xp_percent >= 90:
+        return "⚡ One final push remains before evolution."
+
+    if evolution == "💪 WARRIOR":
+        return "A warrior is not born strong. He becomes strong through repetition."
+
+    if goal_plan == "Fat Loss Program":
+        return "🥗 Stay sharp with clean choices. Your body is adapting faster than you think."
+
+    if goal_plan == "Muscle Gain Program":
+        return "🍗 Fuel hard, recover harder. Every meal matters for strength."
+
+    return "Every strong body starts as an unfinished one. Keep building."
+
+def mentor_response(message):
+
+    message = message.lower()
+
+    if "insecure" in message or "ugly" in message:
+        return (
+            "Every strong body begins as an unfinished one. "
+            "Do not judge yourself by today's reflection. "
+            "Judge yourself by today's effort."
+        )
+
+    elif "tired" in message:
+        return (
+            "Fatigue is temporary. Discipline remains. "
+            "Rest if needed, but never quit."
+        )
+
+    elif "motivation" in message:
+        return (
+            "Motivation comes and goes. "
+            "Discipline stays when motivation leaves."
+        )
+
+    elif "sad" in message:
+        return (
+            "Even champions face dark days. "
+            "The goal is not to avoid struggle. "
+            "The goal is to keep moving through it."
+        )
+
+    elif "give up" in message:
+        return (
+            "The person who changes his life is not the most talented. "
+            "It is the one who refuses to stop."
+        )
+
+    elif "fat loss" in message:
+        return (
+            "Focus on consistency. "
+            "One good day means little. "
+            "One hundred good days changes everything."
+        )
+
+    elif "muscle" in message:
+        return (
+            "Feed the body. Challenge the body. Recover the body. "
+            "Repeat."
+        )
+
+    else:
+        return (
+            "Warrior, keep your eyes on today's mission. "
+            "Small victories create legendary results."
+        )
+
+def get_activity_factor(activity_level):
+    return {
+        "Sedentary": 1.2,
+        "Light": 1.375,
+        "Moderate": 1.55,
+        "Active": 1.725,
+        "Very Active": 1.9,
+    }.get(activity_level, 1.2)
+
+
+def get_evolution_label(xp):
+    if xp >= 75:
+        return "✨ CELESTIAL"
+    if xp >= 50:
+        return "👑 GOD"
+    if xp >= 30:
+        return "🔥 DEMIGOD"
+    if xp >= 15:
+        return "⚔ WARRIOR"
+    return "⚫ MORTAL"
+
+
+def get_mentor_response(
+    user_message,
+    streak,
+    evolution,
+    boss_available,
+    region_name,
+    xp_percent,
+    water_ml,
+    water_limit_reached,
+    goal_plan,
+    challenge_progress,
+):
+    text = user_message.lower().strip()
+
+    # Quick emotional checks
+    if "insecure" in text:
+        return (
+            "Every strong physique began as an unfinished one. "
+            "Do not judge your beginning against someone else's peak."
+        )
+
+    # Greetings quick-reply (include common typos like 'hy')
+    greetings = [
+        "hi",
+        "hy",
+        "hello",
+        "hey",
+        "hiya",
+        "yo",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    ]
+    if any(text == g or text.startswith(g + " ") for g in greetings):
+        return "Hi — how could I help you?"
+
+    if not text:
+        return get_ai_message(
+            streak,
+            evolution,
+            boss_available,
+            region_name,
+            xp_percent,
+            water_ml=water_ml,
+            water_limit_reached=water_limit_reached,
+            challenge_progress=challenge_progress,
+            goal_plan=goal_plan,
+        )
+
+    if any(word in text for word in ["water", "hydrate", "hydration"]):
+        if water_limit_reached:
+            return (
+                "💧 You hit the limit for today. "
+                "Keep that discipline and rest easy knowing hydration is handled."
+            )
+        return (
+            "💧 Keep drinking. Every 250ml counts toward your recovery and energy. "
+            "Aim for the next goal and stay consistent."
+        )
+
+    if any(word in text for word in ["meal", "eat", "food", "nutrition", "diet"]):
+        if goal_plan == "Fat Loss Program":
+            return (
+                "🥗 Stick to lean proteins, veggies, and smart portions. "
+                "Your fuel should help you stay strong without extra calories."
+            )
+        if goal_plan == "Muscle Gain Program":
+            return (
+                "🍗 Choose calorie-dense quality foods and recover with protein. "
+                "This is how muscle builds after the grind."
+            )
+        return (
+            "🍎 Keep your meals balanced and consistent. "
+            "Nutrition is the silent partner to every workout."
+        )
+
+    if any(word in text for word in ["boss", "battle", "challenge", "guardian", "region"]):
+        if boss_available:
+            return (
+                f"⚔ Your region is cleared and {region_name}'s boss is waiting. "
+                "Step into the arena and claim your reward."
+            )
+        return (
+            f"👊 Focus on today's mission first. The boss becomes real when the path is complete."
+        )
+
+    if any(word in text for word in ["progress", "xp", "streak", "weight", "goal", "lost", "gain"]):
+        return (
+            "📈 Progress is a collection of small wins. "
+            "Keep stacking them with consistency and the results will follow."
+        )
+
+    if any(word in text for word in ["tired", "weak", "give up", "can't", "cant", "fail"]):
+        return (
+            "🛡 Every strong body has a tired day. Rest if you need it, then return with focus. "
+            "You are stronger than the urge to quit."
+        )
+
+    if any(word in text for word in ["help", "advice", "what", "how", "when", "why"]):
+        return get_ai_message(
+            streak,
+            evolution,
+            boss_available,
+            region_name,
+            xp_percent,
+            water_ml=water_ml,
+            water_limit_reached=water_limit_reached,
+            challenge_progress=challenge_progress,
+            goal_plan=goal_plan,
+        )
+
+    return (
+        "⚡ I hear you. Stay locked in with the mission ahead and keep moving forward. "
+        "Small actions add up to legendary change."
+    )
+
+
+@app.route("/")
+def home():
+
+    return render_template("index.html")
+
+
+@app.route("/start")
+def start():
+
+    if "user" in session:
+        return redirect(url_for("dashboard"))
+
+    return redirect(url_for("login"))
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+
+    if request.method == "POST":
+
+        username = request.form["username"]
+        password = request.form["password"]
+
+        existing_user = User.query.filter_by(username=username).first()
+
+        if existing_user:
+            return "Username already exists"
+
+        new_user = User(username=username, password=generate_password_hash(password))
+
+        db.session.add(new_user)
+        db.session.commit()
+
+        progress = UserProgress(user_id=new_user.id)
+
+        db.session.add(progress)
+        db.session.commit()
+
+        return redirect(url_for("login"))
+
+    return render_template("register.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+
+    if request.method == "POST":
+
+        username = request.form["username"]
+        password = request.form["password"]
+
+        user = User.query.filter_by(username=username).first()
+
+        if user and check_password_hash(user.password, password):
+
+            session["user"] = user.id
+
+            return redirect(url_for("dashboard"))
+
+        return render_template("login.html", error="Invalid Username or Password")
+
+    return render_template("login.html")
+
+
+@app.route("/dashboard")
+def dashboard():
+
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    user_id = session["user"]
+
+    water = WaterTracker.query.filter_by(user_id=user_id).first()
+
+    water_limit_reached = False
+
+    if water and water.water_ml >= 3000:
+        water_limit_reached = True
+
+    if not water:
+
+        water = WaterTracker(user_id=user_id, water_ml=0)
+
+        db.session.add(water)
+        db.session.commit()
+
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    bmi = None
+
+    profile = UserProfile.query.filter_by(user_id=user_id).first()
+
+    maintenance_calories = None
+    fat_loss_calories = None
+    muscle_gain_calories = None
+    if profile:
+
+        if profile.gender == "Male":
+
+            bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age + 5
+
+        else:
+
+            bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age - 161
+
+        activity_factor = {
+            "Sedentary": 1.2,
+            "Light": 1.375,
+            "Moderate": 1.55,
+            "Active": 1.725,
+            "Very Active": 1.9,
+        }.get(profile.activity_level, 1.2)
+        maintenance_calories = round(bmr * activity_factor)
+
+        fat_loss_calories = round(maintenance_calories - 500)
+
+        muscle_gain_calories = round(maintenance_calories + 300)
+
+    logs = WeightLog.query.filter_by(user_id=user_id).order_by(WeightLog.id.asc()).all()
+
+    chart_labels = []
+    chart_weights = []
+
+    for log in logs:
+
+        if log.log_date:
+            chart_labels.append(log.log_date.strftime("%d-%b"))
+        else:
+            chart_labels.append("Unknown")
+
+        chart_weights.append(log.weight)
+
+    starting_weight = None
+    current_weight = None
+    weight_lost = None
+
+    goal_percent = 0
+
+    if logs:
+        starting_weight = logs[0].weight
+
+        current_weight = logs[-1].weight
+
+        weight_lost = round(starting_weight - current_weight, 1)
+
+        if profile and profile.target_weight:
+            total_needed = starting_weight - profile.target_weight
+
+            achieved = starting_weight - current_weight
+
+            if total_needed > 0:
+                goal_percent = round((achieved / total_needed) * 100, 1)
+
+                goal_percent = max(0, min(goal_percent, 100))
+
+    bmi = None
+
+    if profile and profile.height and profile.weight:
+
+        height_m = profile.height / 100
+
+        bmi = round(profile.weight / (height_m * height_m), 1)
+
+    bmi_status = None
+
+    if bmi:
+
+        if bmi < 18.5:
+            bmi_status = "Underweight"
+
+        elif bmi < 25:
+            bmi_status = "Healthy"
+
+        elif bmi < 30:
+            bmi_status = "Overweight"
+
+        else:
+            bmi_status = "Obese"
+
+    goal_plan = None
+
+    if bmi is not None:
+
+        if bmi < 18.5:
+            goal_plan = "Muscle Gain Program"
+
+        elif bmi < 25:
+            goal_plan = "Maintenance Program"
+
+        elif bmi < 30:
+            goal_plan = "Fat Loss Program"
+
+        else:
+            goal_plan = "Aggressive Fat Loss Program"
+
+    meal_plan = []
+
+    if goal_plan == "Fat Loss Program":
+        meal_plan = [
+            "🥣 Oats",
+            "🥚 Egg Whites",
+            "🍗 Chicken Breast",
+            "🥗 Salad",
+            "🍎 Apple",
+        ]
+    elif goal_plan == "Muscle Gain Program":
+        meal_plan = [
+            "🥚 Whole Eggs",
+            "🥜 Peanut Butter",
+            "🍌 Banana",
+            "🍗 Chicken",
+            "🍚 Rice",
+        ]
+    elif goal_plan == "Maintenance Program":
+
+        meal_plan = [
+            "🍳 Eggs",
+            "🍚 Brown Rice",
+            "🥗 Mixed Vegetables",
+            "🍎 Apple",
+            "🥛 Milk",
+        ]
+
+    missions = []
+
+    today = date.today()
+
+    water_done = DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Drink 2500ml Water", mission_date=today
+    ).first()
+
+    missions.append(
+        {
+            "title": "Drink 2500ml Water",
+            "reward": 5,
+            "completed": water_done is not None,
+        }
+    )
+
+    if goal_plan == "Fat Loss Program":
+        calorie_done = DailyMission.query.filter_by(
+            user_id=user_id,
+            mission_name=f"Stay under {fat_loss_calories} kcal",
+            mission_date=today,
+        ).first()
+        missions.append(
+            {
+                "title": f"Stay under {fat_loss_calories} kcal",
+                "reward": 10,
+                "completed": calorie_done is not None,
+            }
+        )
+
+    elif goal_plan == "Muscle Gain Program":
+        calorie_done = DailyMission.query.filter_by(
+            user_id=user_id,
+            mission_name=f"Reach {muscle_gain_calories} kcal",
+            mission_date=today,
+        ).first()
+        missions.append(
+            {
+                "title": f"Reach {muscle_gain_calories} kcal",
+                "reward": 10,
+                "completed": calorie_done is not None,
+            }
+        )
+
+    else:
+        calorie_done = DailyMission.query.filter_by(
+            user_id=user_id,
+            mission_name=f"Stay near {maintenance_calories} kcal",
+            mission_date=today,
+        ).first()
+        missions.append(
+            {
+                "title": f"Stay near {maintenance_calories} kcal",
+                "reward": 10,
+                "completed": calorie_done is not None,
+            }
+        )
+
+    challenge_done = DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Complete Today's Challenge", mission_date=today
+    ).first()
+
+    missions.append(
+        {
+            "title": "Complete Today's Challenge",
+            "reward": 20,
+            "completed": challenge_done is not None,
+        }
+    )
+
+    streak = UserStreak.query.filter_by(user_id=user_id).first()
+    if not streak:
+
+        streak = UserStreak(streak_count=0)
+
+    quote = random.choice(QUOTES)
+
+    unlocked_level = progress.level
+
+    current_region = REGIONS.get(unlocked_level, REGIONS[1])
+
+    current_boss = BOSSES.get(progress.level)
+
+    boss_defeated = BossBattle.query.filter_by(
+        user_id=user_id, boss_level=progress.level
+    ).first()
+
+    region_name = current_region["name"]
+
+    next_region = current_region["next"]
+
+    region_target = get_region_target(progress.level)
+    region_weeks = get_region_weeks(progress.level)
+    region_progress = round((progress.completed / region_target) * 100, 1)
+    region_progress = min(region_progress, 100)
+
+    xp_percent = min((progress.xp / 30) * 100, 100)
+    region_xp_percent = region_progress
+
+    badges = get_badges(progress.xp)
+
+    warrior_title = "Recruit"
+
+    if progress.xp >= 15:
+        warrior_title = "Warrior"
+
+    if progress.xp >= 30:
+        warrior_title = "Champion"
+
+    if progress.xp >= 50:
+        warrior_title = "ACE"
+
+    if progress.xp >= 75:
+        warrior_title = "LEGEND"
+
+        legend = Achievement.query.filter_by(
+            user_id=user_id, achievement_name="Rise Back Legend"
+        ).first()
+
+        if not legend:
+
+            db.session.add(
+                Achievement(user_id=user_id, achievement_name="Rise Back Legend")
+            )
+
+            db.session.commit()
+    achievements = Achievement.query.filter_by(user_id=user_id).all()
+
+    achievement_popup = session.pop("achievement_popup", None)
+
+    reward_popup = session.pop("reward_popup", None)
+
+    rewards = RewardChest.query.filter_by(user_id=user_id).all()
+
+    regions = [
+        {"level": 1, "name": "🏕 Foundation Camp"},
+        {"level": 2, "name": "⚔ Combat Valley"},
+        {"level": 3, "name": "🏛 Elite Arena"},
+        {"level": 4, "name": "👑 Legend Citadel"},
+        {"level": 5, "name": "🔥 Legacy Throne"},
+    ]
+
+    if progress.xp >= 75:
+
+        evolution = "✨ CELESTIAL"
+
+    elif progress.xp >= 50:
+
+        evolution = "👑 GOD"
+
+    elif progress.xp >= 30:
+
+        evolution = "🔥 DEMIGOD"
+
+    elif progress.xp >= 15:
+
+        evolution = "⚔ WARRIOR"
+
+    else:
+
+        evolution = "⚫ MORTAL"
+
+    evolution_rate = min(round((progress.xp / 75) * 100), 100)
+
+    aura_class = "aura-mortal"
+
+    if evolution == "⚔ WARRIOR":
+        aura_class = "aura-warrior"
+
+    elif evolution == "🔥 DEMIGOD":
+        aura_class = "aura-demigod"
+
+    elif evolution == "👑 GOD":
+        aura_class = "aura-god"
+
+    elif evolution == "✨ CELESTIAL":
+        aura_class = "aura-celestial"
+
+    shadow_boss = None
+
+    if evolution == "✨ CELESTIAL":
+
+        shadow_boss = ShadowBoss.query.filter_by(user_id=user_id).first()
+
+    boss_image = BOSS_IMAGES.get(progress.level)
+
+    boss_names = {
+        1: "Foundation Guardian",
+        2: "Combat Warlord",
+        3: "Arena Destroyer",
+        4: "Legend Emperor",
+        5: "Legacy Throne Guardian",
+    }
+
+    boss_images = {
+        1: "foundation_guardian.png",
+        2: "combat_warlord.png",
+        3: "arena_destroyer.png",
+        4: "legend_emperor.png",
+        5: "legacy_throne_guardian.png",
+    }
+
+    defeated_bosses = BossBattle.query.filter_by(user_id=user_id).all()
+
+    boss_descriptions = {
+        1: "The Foundation Guardian tests your discipline.",
+        2: "The Combat Warlord tests your endurance.",
+        3: "The Arena Destroyer tests your consistency.",
+        4: "The Legend Emperor tests your mastery.",
+        5: "The Legacy Guardian tests your transformation.",
+    }
+
+    boss_description = boss_descriptions.get(
+        progress.level, "A powerful guardian stands in your way."
+    )
+
+    region_completed = all(mission.get("completed", False) for mission in missions)
+
+    boss_available = region_completed and not boss_defeated
+
+    region_data = {
+        1: {
+            "name": "Foundation Camp",
+            "description": "Build discipline and consistency.",
+        },
+        2: {"name": "Combat Valley", "description": "Push your limits."},
+        3: {"name": "Elite Arena", "description": "Prove your endurance."},
+        4: {"name": "Legend Citadel", "description": "Stand among the strongest."},
+        5: {"name": "Legacy Throne", "description": "Face your final challenge."},
+    }
+
+    mentor_reply = get_ai_message(
+        streak.streak_count if streak else 0,
+        evolution,
+        boss_available,
+        region_name,
+        xp_percent,
+        water_ml=water.water_ml if water else 0,
+        water_limit_reached=water_limit_reached,
+        challenge_progress=region_progress,
+        goal_plan=goal_plan,
+    )
+    
+    mentor_response = session.get("mentor_response", mentor_reply)
+    mentor_history = session.get("mentor_history", [])
+    
+    mentor_reply = session.get(
+        "mentor_reply",
+        get_ai_message(
+            streak.streak_count if streak else 0,
+            evolution,
+            boss_available,
+            region_name,
+            xp_percent
+        )
+    )
+    ai_message = mentor_reply
+    
+    return render_template(
+        "dashboard.html",
+        progress=progress,
+        bmi=bmi,
+        bmi_status=bmi_status,
+        chart_labels=chart_labels,
+        chart_weights=chart_weights,
+        starting_weight=starting_weight,
+        current_weight=current_weight,
+        goal_plan=goal_plan,
+        weight_lost=weight_lost,
+        quote=quote,
+        unlocked_level=unlocked_level,
+        region_name=region_name,
+        next_region=next_region,
+        region_progress=region_progress,
+        region_target=region_target,
+        region_weeks=region_weeks,
+        xp_percent=xp_percent,
+        region_xp_percent=region_xp_percent,
+        badges=badges,
+        profile=profile,
+        goal_percent=goal_percent,
+        water=water,
+        maintenance_calories=maintenance_calories,
+        fat_loss_calories=fat_loss_calories,
+        muscle_gain_calories=muscle_gain_calories,
+        meal_plan=meal_plan,
+        missions=missions,
+        water_limit_reached=water_limit_reached,
+        streak=streak,
+        warrior_title=warrior_title,
+        regions=regions,
+        current_boss=current_boss,
+        boss_defeated=boss_defeated,
+        achievements=achievements,
+        achievement_popup=achievement_popup,
+        reward_popup=reward_popup,
+        rewards=rewards,
+        evolution=evolution,
+        evolution_rate=evolution_rate,
+        aura_class=aura_class,
+        shadow_boss=shadow_boss,
+        boss_image=boss_image,
+        boss_names=boss_names,
+        boss_images=boss_images,
+        boss_description=boss_description,
+        boss_available=boss_available,
+        region_data=region_data,
+        ai_message=ai_message,
+        mentor_response=mentor_response,
+        mentor_history=mentor_history,
+        mentor_reply=mentor_reply,
+    )
+
+
+@app.route("/workouts", methods=["GET", "POST"])
+def workouts():
+
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    user_id = session["user"]
+
+    today = date.today()
+
+    weekday = today.weekday()
+
+    todays_plan = WORKOUT_SCHEDULE[weekday]
+
+    if request.method == "POST":
+
+        exercise_name = request.form.get("exercise_name", "").strip()
+
+        sets = request.form.get("sets") or None
+        reps = request.form.get("reps") or None
+        weight_kg = request.form.get("weight_kg") or None
+        duration = request.form.get("duration_minutes") or None
+        notes = request.form.get("notes", "").strip()
+
+        if exercise_name:
+
+            duration_val = int(duration) if duration else 0
+
+            cal_rate = CATEGORY_CALORIES_PER_MIN.get(todays_plan["focus"], 6)
+
+            calories = round(duration_val * cal_rate) if duration_val else None
+
+            log = WorkoutLog(
+                user_id=user_id,
+                workout_date=today,
+                exercise_name=exercise_name,
+                category=todays_plan["focus"],
+                sets=int(sets) if sets else None,
+                reps=int(reps) if reps else None,
+                weight_kg=float(weight_kg) if weight_kg else None,
+                duration_minutes=duration_val if duration_val else None,
+                calories_burned=calories,
+                notes=notes or None,
+            )
+
+            db.session.add(log)
+
+            # Reward XP for logging — capped at 3 rewarded logs per day to discourage spam
+            logs_today_count = WorkoutLog.query.filter_by(
+                user_id=user_id, workout_date=today
+            ).count()
+
+            progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+            if progress and logs_today_count < 3:
+                progress.xp += 5
+                award_region_progress(progress, 1)
+
+            first_workout = Achievement.query.filter_by(
+                user_id=user_id, achievement_name="Iron Will"
+            ).first()
+
+            if not first_workout:
+
+                db.session.add(
+                    Achievement(user_id=user_id, achievement_name="Iron Will")
+                )
+
+                session["achievement_popup"] = {
+                    "title": "Iron Will",
+                    "description": "Logged your first workout",
+                }
+
+            db.session.commit()
+
+        return redirect(url_for("workouts"))
+
+    start_of_week = today - timedelta(days=weekday)
+
+    week_dates = [start_of_week + timedelta(days=i) for i in range(7)]
+
+    logs_this_week = WorkoutLog.query.filter(
+        WorkoutLog.user_id == user_id,
+        WorkoutLog.workout_date >= start_of_week,
+        WorkoutLog.workout_date <= week_dates[-1],
+    ).all()
+
+    logged_dates = {log.workout_date for log in logs_this_week}
+
+    total_logged = WorkoutLog.query.filter_by(user_id=user_id).count()
+
+    total_calories_week = sum(l.calories_burned or 0 for l in logs_this_week)
+
+    total_minutes_week = sum(l.duration_minutes or 0 for l in logs_this_week)
+
+    recent_logs = (
+        WorkoutLog.query.filter_by(user_id=user_id)
+        .order_by(WorkoutLog.id.desc())
+        .limit(10)
+        .all()
+    )
+
+    week_strip = []
+
+    for i, d in enumerate(week_dates):
+
+        week_strip.append(
+            {
+                "label": WORKOUT_SCHEDULE[i]["day"][:3],
+                "date": d,
+                "icon": WORKOUT_SCHEDULE[i]["icon"],
+                "focus": WORKOUT_SCHEDULE[i]["focus"],
+                "is_today": d == today,
+                "logged": d in logged_dates,
+                "is_future": d > today,
+            }
+        )
+
+    return render_template(
+        "workouts.html",
+        todays_plan=todays_plan,
+        week_strip=week_strip,
+        recent_logs=recent_logs,
+        total_logged=total_logged,
+        total_calories_week=total_calories_week,
+        total_minutes_week=total_minutes_week,
+        logs_this_week_count=len(logs_this_week),
+    )
+
+
+@app.route("/challenges/<int:level>")
+def challenges(level):
+
+    data = get_region_challenges(level)
+    region = REGION_CONFIG.get(level, REGION_CONFIG[1])
+
+    return render_template(
+        "challenges.html",
+        challenges=data,
+        level=level,
+        region_name=region["name"],
+        weeks=region["weeks"],
+        target_progress=region["target_progress"],
+    )
+
+
+@app.route("/complete/<int:level>")
+def complete(level):
+
+    user_id = session["user"]
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    today = date.today()
+
+    streak = UserStreak.query.filter_by(user_id=user_id).first()
+
+    if not streak:
+
+        streak = UserStreak(user_id=user_id, streak_count=1, last_active=today)
+
+        db.session.add(streak)
+
+    else:
+
+        days_gap = (today - streak.last_active).days
+
+        if days_gap == 1:
+
+            streak.streak_count += 1
+
+        elif days_gap > 1:
+
+            streak.streak_count = 1
+
+        streak.last_active = today
+
+    challenge_reward = DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Challenge XP Reward", mission_date=today
+    ).first()
+
+    if not challenge_reward:
+
+        progress.xp += 3
+        award_region_progress(progress, 1)
+
+        db.session.add(
+            DailyMission(
+                user_id=user_id,
+                mission_name="Challenge XP Reward",
+                mission_date=today,
+                completed=True,
+            )
+        )
+
+    first_blood = Achievement.query.filter_by(
+        user_id=user_id, achievement_name="First Blood"
+    ).first()
+
+    if not first_blood:
+
+        db.session.add(Achievement(user_id=user_id, achievement_name="First Blood"))
+
+        # Streak Bonus Rewards
+
+    if streak.streak_count >= 7:
+
+        iron = Achievement.query.filter_by(
+            user_id=user_id, achievement_name="Iron Streak"
+        ).first()
+
+        if not iron:
+
+            db.session.add(Achievement(user_id=user_id, achievement_name="Iron Streak"))
+    if progress.xp >= progress.level * 6:
+        progress.level = min(5, progress.level + 1)
+
+    existing = DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Complete Today's Challenge", mission_date=today
+    ).first()
+
+    if not existing:
+
+        progress.xp += 20
+
+        db.session.add(
+            DailyMission(
+                user_id=user_id,
+                mission_name="Complete Today's Challenge",
+                mission_date=today,
+                completed=True,
+            )
+        )
+    db.session.commit()
+
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/add-water/<int:amount>")
+def add_water(amount):
+
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    user_id = session["user"]
+
+    water = WaterTracker.query.filter_by(user_id=user_id).first()
+
+    if not water:
+
+        water = WaterTracker(user_id=user_id, water_ml=0)
+
+        db.session.add(water)
+
+    MAX_WATER = 3000
+
+    # Stop adding if already at limit
+    if water.water_ml >= MAX_WATER:
+        return """
+        <h3>⚠ Daily water limit reached (3000 ml)</h3>
+        <p>Excessive water intake may affect electrolyte balance.</p>
+        <a href='/dashboard'>Back to Dashboard</a>
+        """
+
+    # Add water but never exceed limit
+    water.water_ml = min(water.water_ml + amount, MAX_WATER)
+
+    # Auto-complete water mission at 2500 ml
+    if water.water_ml >= 2500:
+        achievement = Achievement.query.filter_by(
+            user_id=user_id, achievement_name="Water Warrior"
+        ).first()
+
+        if not achievement:
+
+            db.session.add(
+                Achievement(user_id=user_id, achievement_name="Water Warrior")
+            )
+
+        from datetime import date
+
+        existing = DailyMission.query.filter_by(
+            user_id=user_id,
+            mission_name="Drink 2500ml Water",
+            mission_date=date.today(),
+        ).first()
+
+        if not existing:
+
+            progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+            if progress:
+                progress.xp += 5
+
+            db.session.add(
+                DailyMission(
+                    user_id=user_id,
+                    mission_name="Drink 2500ml Water",
+                    mission_date=date.today(),
+                    completed=True,
+                )
+            )
+
+    db.session.commit()
+
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/complete-mission", methods=["POST"])
+def complete_mission():
+
+    user_id = session["user"]
+
+    mission_name = request.form["mission"]
+
+    water = WaterTracker.query.filter_by(user_id=user_id).first()
+
+    if mission_name == "Drink 2500ml Water":
+
+        if not water or water.water_ml < 2500:
+
+            return """
+            <h3>
+            ❌ Drink at least 2500 ml water today
+            before completing this mission.
+            </h3>
+            """
+
+    xp = int(request.form["xp"])
+
+    today = date.today()
+
+    existing = DailyMission.query.filter_by(
+        user_id=user_id, mission_name=mission_name, mission_date=today
+    ).first()
+
+    if existing:
+
+        return redirect(url_for("dashboard"))
+
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    progress.xp += xp
+    award_region_progress(progress, 1)
+
+    db.session.add(
+        DailyMission(
+            user_id=user_id,
+            mission_name=mission_name,
+            mission_date=today,
+            completed=True,
+        )
+    )
+
+    db.session.commit()
+
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/boss-battle")
+def boss_battle():
+
+    user_id = session["user"]
+
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    existing = BossBattle.query.filter_by(
+        user_id=user_id, boss_level=progress.level
+    ).first()
+
+    if existing:
+
+        return """
+        <h2>
+        ⚔ Boss already defeated
+        </h2>
+
+        <a href='/dashboard'>
+        Return
+        </a>
+        """
+
+    boss = BOSSES.get(progress.level)
+
+    progress.xp += boss["reward"]
+
+    reward = REWARDS.get(progress.level)
+
+    db.session.add(
+        RewardChest(
+            user_id=user_id,
+            reward_name=reward["name"],
+            reward_description=reward["description"],
+        )
+    )
+
+    session["reward_popup"] = reward
+
+    db.session.add(
+        BossBattle(user_id=user_id, boss_level=progress.level, defeated=True)
+    )
+
+    db.session.commit()
+
+    boss_slayer = Achievement.query.filter_by(
+        user_id=user_id, achievement_name="Boss Slayer"
+    ).first()
+
+    if not boss_slayer:
+
+        db.session.add(Achievement(user_id=user_id, achievement_name="Boss Slayer"))
+
+        session["achievement_popup"] = {
+            "title": "Boss Slayer",
+            "description": "Defeat your first Region Boss",
+        }
+
+        db.session.commit()
+
+    return """
+    <h1>
+    👹 BOSS DEFEATED
+    </h1>
+
+    <h3>
+    REWARD CLAIMED
+    </h3>
+
+    <a href='/dashboard'>
+    Return To Kingdom
+    </a>
+    """
+
+
+@app.route("/shadow-boss")
+def shadow_boss_battle():
+
+    user_id = session["user"]
+
+    existing = ShadowBoss.query.filter_by(user_id=user_id).first()
+
+    if existing:
+
+        return """
+        <h2>
+        👑 Destiny Already Fulfilled
+        </h2>
+
+        <a href='/dashboard'>
+        Return
+        </a>
+        """
+
+    db.session.add(ShadowBoss(user_id=user_id, defeated=True))
+
+    db.session.commit()
+
+    return """
+    <h1>
+    ⚔ THE OLD YOU HAS FALLEN
+    </h1>
+
+    <h2>
+    👑 TITLE UNLOCKED
+    </h2>
+
+    <h1>
+    RISE BACK LEGEND
+    </h1>
+
+    <a href='/dashboard'>
+    Return To Kingdom
+    </a>
+    """
+
+@app.route("/mentor-chat", methods=["POST"])
+def mentor_chat():
+
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    user_id = session["user"]
+    user_message = request.form.get("message", "").strip()
+
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+    water = WaterTracker.query.filter_by(user_id=user_id).first()
+    profile = UserProfile.query.filter_by(user_id=user_id).first()
+    streak = UserStreak.query.filter_by(user_id=user_id).first()
+
+    if not progress:
+        return redirect(url_for("dashboard"))
+
+    if not streak:
+        streak = UserStreak(user_id=user_id, streak_count=0)
+
+    goal_plan = None
+    if profile and profile.height and profile.weight:
+        height_m = profile.height / 100
+        bmi = round(profile.weight / (height_m * height_m), 1)
+        if bmi < 18.5:
+            goal_plan = "Muscle Gain Program"
+        elif bmi < 25:
+            goal_plan = "Maintenance Program"
+        elif bmi < 30:
+            goal_plan = "Fat Loss Program"
+        else:
+            goal_plan = "Aggressive Fat Loss Program"
+
+    today = date.today()
+    water_done = DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Drink 2500ml Water", mission_date=today
+    ).first()
+
+    activity_factor = get_activity_factor(profile.activity_level) if profile else 1.2
+    calorie_target = 0
+
+    if profile:
+        bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age + (5 if profile.gender == "Male" else -161)
+        calorie_target = round(bmr * activity_factor)
+
+    if goal_plan == "Fat Loss Program":
+        calorie_text = f"Stay under {calorie_target - 500:.0f} kcal"
+    elif goal_plan == "Muscle Gain Program":
+        calorie_text = f"Reach {calorie_target + 300:.0f} kcal"
+    else:
+        calorie_text = f"Stay near {calorie_target:.0f} kcal"
+
+    calorie_done = DailyMission.query.filter_by(
+        user_id=user_id, mission_name=calorie_text, mission_date=today
+    ).first()
+
+    challenge_done = DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Complete Today's Challenge", mission_date=today
+    ).first()
+
+    completed_missions = 0
+    completed_missions += 1 if water_done else 0
+    completed_missions += 1 if calorie_done else 0
+    completed_missions += 1 if challenge_done else 0
+    challenge_progress = round((completed_missions / 3) * 100, 1)
+
+    current_region = REGIONS.get(progress.level, REGIONS[1])
+    region_name = current_region["name"]
+    xp_percent = min((progress.xp / 30) * 100, 100)
+    boss_defeated = BossBattle.query.filter_by(
+        user_id=user_id, boss_level=progress.level
+    ).first()
+    region_completed = completed_missions == 3
+    boss_available = region_completed and not boss_defeated
+    water_ml = water.water_ml if water else 0
+    water_limit_reached = water_ml >= 3000
+
+    response = get_mentor_response(
+        user_message,
+        streak.streak_count if streak else 0,
+        get_evolution_label(progress.xp),
+        boss_available,
+        region_name,
+        xp_percent,
+        water_ml,
+        water_limit_reached,
+        goal_plan,
+        challenge_progress,
+    )
+
+    # maintain simple conversation history in session
+    history = session.get("mentor_history", [])
+    if user_message:
+        history.append({"sender": "user", "text": user_message})
+    history.append({"sender": "mentor", "text": response})
+    # keep last 20 messages
+    session["mentor_history"] = history[-20:]
+    session["mentor_response"] = response
+
+    # If this is an AJAX request, return JSON so the frontend can update without reload
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
+        return jsonify({"response": response, "history": session.get("mentor_history", [])})
+
+    return redirect(url_for("dashboard"))
+
+@app.route("/reset-boss")
+def reset_boss():
+
+    user_id = session["user"]
+
+    BossBattle.query.filter_by(user_id=user_id).delete()
+
+    db.session.commit()
+
+    return redirect("/dashboard")
+
+
+@app.route("/logout")
+def logout():
+
+    session.pop("user", None)
+
+    return redirect(url_for("home"))
+
+
+with app.app_context():
+    db.create_all()
+
+
+@app.route("/db-test")
+def db_test():
+
+    users = User.query.all()
+
+    return f"Users in database: {len(users)}"
+
+
+@app.route("/profile", methods=["GET", "POST"])
+def profile():
+
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    user_id = session["user"]
+
+    existing_profile = UserProfile.query.filter_by(user_id=user_id).first()
+
+    if request.method == "POST":
+
+        if not existing_profile:
+
+            profile = UserProfile(
+                user_id=user_id,
+                age=request.form["age"],
+                gender=request.form["gender"],
+                height=request.form["height"],
+                weight=request.form["weight"],
+                fitness_goal=request.form["fitness_goal"],
+                activity_level=request.form["activity_level"],
+                target_weight=request.form["target_weight"],
+            )
+
+            db.session.add(profile)
+
+        else:
+
+            existing_profile.age = request.form["age"]
+            existing_profile.gender = request.form["gender"]
+            existing_profile.height = request.form["height"]
+            existing_profile.weight = request.form["weight"]
+            existing_profile.fitness_goal = request.form["fitness_goal"]
+            existing_profile.activity_level = request.form["activity_level"]
+            existing_profile.target_weight = request.form["target_weight"]
+
+        db.session.commit()
+
+        return redirect(url_for("dashboard"))
+
+    return render_template("profile.html", profile=existing_profile)
+
+
+@app.route("/weight", methods=["GET", "POST"])
+def weight():
+
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    user_id = session["user"]
+
+    if request.method == "POST":
+
+        weight = request.form["weight"]
+
+        log = WeightLog(user_id=user_id, weight=weight)
+
+        db.session.add(log)
+        db.session.commit()
+
+        return redirect(url_for("dashboard"))
+
+    logs = (
+        WeightLog.query.filter_by(user_id=user_id)
+        .order_by(WeightLog.log_date.desc())
+        .all()
+    )
+
+    return render_template("weight.html", logs=logs)
+
+
+if __name__ == "__main__":
+    app.run(debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")

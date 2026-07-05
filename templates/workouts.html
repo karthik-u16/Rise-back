@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Training Grounds — Rise Back</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root{
+            --void:#08080d;
+            --panel:#12121b;
+            --panel-2:#181822;
+            --line:rgba(212,164,55,.22);
+            --ember:#ff5000;
+            --ember-light:#ff8147;
+            --gold:#d4a437;
+            --gold-light:#f3cf6e;
+            --ink:#f1ece0;
+            --ink-dim:#8d8a9a;
+            --crimson:#e0394a;
+            --good:#3ecf8e;
+        }
+
+        *{ box-sizing:border-box; }
+
+        body{
+            margin:0;
+            background:
+                radial-gradient(ellipse 900px 500px at 20% -10%, rgba(255,80,0,.08), transparent 60%),
+                radial-gradient(ellipse 900px 500px at 100% 0%, rgba(212,164,55,.07), transparent 60%),
+                var(--void);
+            color:var(--ink);
+            font-family:'Rajdhani', sans-serif;
+            font-weight:500;
+            padding-bottom:90px;
+        }
+
+        h1,h2,h3,h4,h5{ font-family:'Cinzel', serif; margin:0; letter-spacing:.5px; }
+        a{ text-decoration:none; }
+
+        .eyebrow{
+            font-family:'Rajdhani', sans-serif;
+            font-weight:700;
+            letter-spacing:3px;
+            font-size:12px;
+            color:var(--gold);
+            text-transform:uppercase;
+        }
+
+        /* ---------- TOP BAR ---------- */
+        .topbar{
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            gap:20px;
+            padding:18px 32px;
+            border-bottom:1px solid var(--line);
+            background:linear-gradient(180deg, rgba(18,18,27,.9), rgba(18,18,27,.4));
+            flex-wrap:wrap;
+        }
+        .brand{ display:flex; flex-direction:column; }
+        .brand .word{ font-size:26px; font-weight:800; color:var(--ink); }
+        .brand .word span{ color:var(--ember); }
+        .brand small{ font-size:10.5px; letter-spacing:2px; color:var(--ink-dim); text-transform:uppercase; }
+
+        .page-title{ text-align:center; flex:1; min-width:260px; }
+        .page-title h1{
+            font-size:28px; font-weight:800; letter-spacing:5px; text-transform:uppercase;
+            background:linear-gradient(180deg,#fff,var(--gold-light));
+            -webkit-background-clip:text; background-clip:text; color:transparent;
+        }
+        .page-title .tag{ font-size:12px; letter-spacing:3px; color:var(--ember-light); text-transform:uppercase; font-weight:700; }
+
+        .back-link{
+            font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-dim); font-weight:700;
+            border:1px solid var(--line); padding:10px 16px; border-radius:10px;
+        }
+        .back-link:hover{ color:var(--gold-light); border-color:var(--gold); }
+
+        /* ---------- LAYOUT ---------- */
+        .layout{ max-width:1180px; margin:0 auto; padding:28px 32px; }
+
+        .panel{
+            background:var(--panel);
+            border:1px solid var(--line);
+            border-radius:18px;
+            padding:24px;
+            margin-bottom:22px;
+        }
+        .panel h4{ font-size:14px; letter-spacing:1.5px; text-transform:uppercase; color:var(--ink); margin-bottom:14px; }
+        .empty{ color:var(--ink-dim); font-size:13px; }
+
+        /* ---------- STAT ROW ---------- */
+        .grid-3{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-bottom:22px; }
+        @media (max-width:760px){ .grid-3{ grid-template-columns:1fr; } }
+        .stat-card{ text-align:center; }
+        .stat-card .lbl{ font-size:11px; letter-spacing:1.5px; color:var(--ink-dim); text-transform:uppercase; font-weight:700; }
+        .stat-card .val{ font-size:30px; font-weight:800; color:var(--ember-light); margin-top:8px; font-family:'Cinzel',serif; }
+        .stat-card .sub{ font-size:11px; color:var(--ink-dim); margin-top:4px; }
+
+        /* ---------- WEEK STRIP ---------- */
+        .week-strip{ display:grid; grid-template-columns:repeat(7,1fr); gap:10px; }
+        @media (max-width:700px){ .week-strip{ grid-template-columns:repeat(4,1fr); } }
+        .day-chip{
+            background:var(--panel-2);
+            border:1px solid var(--line);
+            border-radius:14px;
+            padding:14px 8px;
+            text-align:center;
+            position:relative;
+        }
+        .day-chip .dlabel{ font-size:11px; letter-spacing:1px; color:var(--ink-dim); text-transform:uppercase; font-weight:700; }
+        .day-chip .dicon{ font-size:22px; margin:8px 0 4px; }
+        .day-chip .dfocus{ font-size:10px; color:var(--ink-dim); line-height:1.3; min-height:24px; }
+        .day-chip.today{ border-color:var(--ember); box-shadow:0 0 18px rgba(255,80,0,.3); }
+        .day-chip.today .dlabel{ color:var(--ember-light); }
+        .day-chip.logged{ border-color:rgba(62,207,142,.55); }
+        .day-chip.future{ opacity:.45; }
+        .day-chip .check{
+            position:absolute; top:6px; right:8px; font-size:12px; color:var(--good);
+        }
+
+        /* ---------- TODAY FOCUS ---------- */
+        .focus-card{
+            border:1px solid var(--ember);
+            box-shadow:0 0 22px rgba(255,80,0,.18);
+            background:
+                radial-gradient(ellipse 500px 260px at 10% 0%, rgba(255,80,0,.12), transparent 60%),
+                var(--panel);
+        }
+        .focus-head{ display:flex; align-items:center; gap:14px; margin-bottom:14px; }
+        .focus-head .fic{ font-size:34px; }
+        .focus-head h2{ font-size:22px; color:var(--ink); }
+        .focus-head .fday{ font-size:11px; letter-spacing:2px; color:var(--ember-light); text-transform:uppercase; font-weight:700; }
+
+        .exercise-chips{ display:flex; flex-wrap:wrap; gap:10px; }
+        .exercise-chip{
+            background:var(--panel-2); border:1px solid var(--line); border-radius:20px;
+            padding:8px 16px; font-size:13px; font-weight:600; color:var(--gold-light); cursor:pointer;
+        }
+        .exercise-chip:hover{ border-color:var(--gold); }
+
+        /* ---------- LOG FORM ---------- */
+        .log-grid{ display:grid; grid-template-columns:2fr 1fr 1fr 1fr 1fr; gap:14px; align-items:end; }
+        @media (max-width:900px){ .log-grid{ grid-template-columns:1fr 1fr; } }
+        label{ font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-dim); font-weight:700; display:block; margin-bottom:6px; }
+        input{
+            width:100%; padding:11px 12px;
+            background:#1a1a23; border:1px solid var(--line); border-radius:10px;
+            color:var(--ink); font-family:'Rajdhani',sans-serif; font-size:14.5px; font-weight:600;
+        }
+        input:focus{ outline:none; border-color:var(--gold); box-shadow:0 0 0 3px rgba(212,164,55,.15); }
+        .notes-row{ margin-top:14px; }
+        .btn{
+            font-family:'Rajdhani',sans-serif; font-weight:800; font-size:13px; letter-spacing:1px;
+            border:none; border-radius:10px; padding:12px 18px; cursor:pointer; text-transform:uppercase;
+            width:100%;
+        }
+        .btn-ember{ background:linear-gradient(135deg,var(--ember),#c83e00); color:#1a0a00; box-shadow:0 0 18px rgba(255,80,0,.35); }
+        .btn-ember:hover{ filter:brightness(1.08); }
+
+        /* ---------- HISTORY ---------- */
+        .log-row{
+            display:flex; align-items:center; gap:16px;
+            padding:14px 0; border-bottom:1px solid var(--line); flex-wrap:wrap;
+        }
+        .log-row:last-child{ border-bottom:none; }
+        .log-icon{ font-size:22px; width:36px; text-align:center; flex-shrink:0; }
+        .log-main{ flex:1; min-width:160px; }
+        .log-main .ename{ font-weight:700; font-size:14.5px; color:var(--ink); }
+        .log-main .emeta{ font-size:11.5px; color:var(--ink-dim); margin-top:2px; }
+        .log-stats{ display:flex; gap:18px; flex-wrap:wrap; }
+        .log-stats .stat{ text-align:center; }
+        .log-stats .stat .n{ font-weight:800; color:var(--gold-light); font-size:14px; font-family:'Cinzel',serif; }
+        .log-stats .stat .l{ font-size:9px; letter-spacing:1px; color:var(--ink-dim); text-transform:uppercase; }
+        .log-date{ font-size:11px; color:var(--ink-dim); min-width:60px; text-align:right; }
+    </style>
+</head>
+
+<body>
+
+    <!-- TOP BAR -->
+    <div class="topbar">
+        <div class="brand">
+            <div class="word"><span>RISE</span> BACK</div>
+            <small>Conquer Your Limits. Become Legend.</small>
+        </div>
+
+        <div class="page-title">
+            <h1>Training Grounds</h1>
+            <div class="tag">Log Your Battles. Track Your Rise.</div>
+        </div>
+
+        <a href="/dashboard" class="back-link">← Back to Dashboard</a>
+    </div>
+
+    <div class="layout">
+
+        <!-- STATS -->
+        <div class="grid-3">
+            <div class="panel stat-card">
+                <div class="lbl">🔥 Workouts This Week</div>
+                <div class="val">{{ logs_this_week_count }}</div>
+                <div class="sub">Keep the streak alive</div>
+            </div>
+            <div class="panel stat-card">
+                <div class="lbl">⚡ Calories This Week</div>
+                <div class="val">{{ total_calories_week }}</div>
+                <div class="sub">{{ total_minutes_week }} minutes trained</div>
+            </div>
+            <div class="panel stat-card">
+                <div class="lbl">⚔ Total Logged</div>
+                <div class="val">{{ total_logged }}</div>
+                <div class="sub">All-time battles fought</div>
+            </div>
+        </div>
+
+        <!-- WEEKLY SCHEDULE -->
+        <div class="panel">
+            <h4>🗺 Weekly Training Schedule</h4>
+            <div class="week-strip">
+                {% for d in week_strip %}
+                <div class="day-chip {% if d.is_today %}today{% elif d.logged %}logged{% elif d.is_future %}future{% endif %}">
+                    {% if d.logged %}<span class="check">✓</span>{% endif %}
+                    <div class="dlabel">{{ d.label }}</div>
+                    <div class="dicon">{{ d.icon }}</div>
+                    <div class="dfocus">{{ d.focus }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- TODAY'S FOCUS -->
+        <div class="panel focus-card">
+            <div class="focus-head">
+                <div class="fic">{{ todays_plan.icon }}</div>
+                <div>
+                    <div class="fday">Today's Focus</div>
+                    <h2>{{ todays_plan.focus }}</h2>
+                </div>
+            </div>
+            <div class="exercise-chips">
+                {% for ex in todays_plan.exercises %}
+                <div class="exercise-chip" onclick="document.getElementById('exercise_name').value='{{ ex }}';">{{ ex }}</div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- LOG WORKOUT FORM -->
+        <div class="panel">
+            <h4>📝 Log A Workout</h4>
+            <form method="POST" action="/workouts">
+                <div class="log-grid">
+                    <div>
+                        <label>Exercise</label>
+                        <input type="text" id="exercise_name" name="exercise_name" placeholder="e.g. Push Ups" list="exercise-suggestions" required>
+                        <datalist id="exercise-suggestions">
+                            {% for ex in todays_plan.exercises %}
+                            <option value="{{ ex }}"></option>
+                            {% endfor %}
+                        </datalist>
+                    </div>
+                    <div>
+                        <label>Sets</label>
+                        <input type="number" name="sets" placeholder="3">
+                    </div>
+                    <div>
+                        <label>Reps</label>
+                        <input type="number" name="reps" placeholder="12">
+                    </div>
+                    <div>
+                        <label>Weight (kg)</label>
+                        <input type="number" step="0.5" name="weight_kg" placeholder="0">
+                    </div>
+                    <div>
+                        <label>Duration (min)</label>
+                        <input type="number" name="duration_minutes" placeholder="10">
+                    </div>
+                </div>
+
+                <div class="notes-row">
+                    <label>Notes (optional)</label>
+                    <input type="text" name="notes" placeholder="How did it feel? Any PR?">
+                </div>
+
+                <div style="margin-top:18px; max-width:240px;">
+                    <button type="submit" class="btn btn-ember">⚔ Log Workout</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- HISTORY -->
+        <div class="panel">
+            <h4>📜 Recent Battle Log</h4>
+            {% if recent_logs %}
+                {% for log in recent_logs %}
+                <div class="log-row">
+                    <div class="log-icon">⚔</div>
+                    <div class="log-main">
+                        <div class="ename">{{ log.exercise_name }}</div>
+                        <div class="emeta">{{ log.category }}{% if log.notes %} · {{ log.notes }}{% endif %}</div>
+                    </div>
+                    <div class="log-stats">
+                        {% if log.sets %}
+                        <div class="stat"><div class="n">{{ log.sets }}×{{ log.reps or '–' }}</div><div class="l">Sets</div></div>
+                        {% endif %}
+                        {% if log.weight_kg %}
+                        <div class="stat"><div class="n">{{ log.weight_kg }}kg</div><div class="l">Weight</div></div>
+                        {% endif %}
+                        {% if log.duration_minutes %}
+                        <div class="stat"><div class="n">{{ log.duration_minutes }}m</div><div class="l">Time</div></div>
+                        {% endif %}
+                        {% if log.calories_burned %}
+                        <div class="stat"><div class="n">{{ log.calories_burned }}</div><div class="l">Kcal</div></div>
+                        {% endif %}
+                    </div>
+                    <div class="log-date">{{ log.workout_date.strftime("%d %b") }}</div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="empty">No battles logged yet. Complete today's training above to begin your record.</p>
+            {% endif %}
+        </div>
+
+    </div>
+
+</body>
+</html>

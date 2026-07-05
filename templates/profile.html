@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Profile — Rise Back</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root{
+            --void:#08080d; --panel:#13131b; --ember:#ff5000;
+            --gold:#d4a437; --gold-light:#f3cf6e; --ink:#f1ece0; --ink-dim:#8d8a9a; --line:rgba(212,164,55,.25);
+        }
+        *{ box-sizing:border-box; }
+        body{
+            margin:0; min-height:100vh;
+            display:flex; align-items:center; justify-content:center;
+            background:
+                radial-gradient(ellipse 800px 500px at 15% 10%, rgba(255,80,0,.10), transparent 60%),
+                radial-gradient(ellipse 800px 500px at 90% 90%, rgba(212,164,55,.08), transparent 60%),
+                var(--void);
+            color:var(--ink); font-family:'Rajdhani', sans-serif; padding:24px;
+        }
+        .card{ width:460px; background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:36px 36px; }
+        .eyebrow{ font-size:11px; letter-spacing:3px; color:var(--gold); text-transform:uppercase; font-weight:700; text-align:center; }
+        h1{ font-family:'Cinzel',serif; font-size:26px; text-align:center; margin:8px 0 26px; letter-spacing:1px; }
+        label{ font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-dim); font-weight:700; display:block; margin-bottom:6px; }
+        .row2{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+        input, select{
+            width:100%; padding:12px 14px; margin-bottom:16px;
+            background:#1a1a23; border:1px solid var(--line); border-radius:10px;
+            color:var(--ink); font-family:'Rajdhani',sans-serif; font-size:15px; font-weight:600;
+        }
+        input:focus, select:focus{ outline:none; border-color:var(--gold); box-shadow:0 0 0 3px rgba(212,164,55,.15); }
+        button{
+            width:100%; padding:14px; border:none; border-radius:10px; cursor:pointer; margin-top:6px;
+            background:linear-gradient(135deg,var(--ember),#c83e00); color:#1a0a00;
+            font-weight:800; font-size:14px; letter-spacing:1px; text-transform:uppercase;
+            box-shadow:0 0 20px rgba(255,80,0,.35);
+        }
+        button:hover{ filter:brightness(1.08); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="eyebrow">🛡 Warrior Profile</div>
+        <h1>Set Your Stats</h1>
+
+        <form method="POST">
+            <div class="row2">
+                <div>
+                    <label>Age</label>
+                    <input type="number" name="age" placeholder="Age" value="{{ profile.age if profile else '' }}" required>
+                </div>
+                <div>
+                    <label>Gender</label>
+                    <select name="gender" required>
+                        <option value="" disabled {% if not profile %}selected{% endif %}>Select</option>
+                        <option value="Male" {% if profile and profile.gender == 'Male' %}selected{% endif %}>Male</option>
+                        <option value="Female" {% if profile and profile.gender == 'Female' %}selected{% endif %}>Female</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row2">
+                <div>
+                    <label>Height (cm)</label>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <input id="heightInput" type="number" step="1" min="100" name="height" placeholder="Height" value="{{ profile.height if profile else 100 }}" required style="flex:1;">
+                        <div style="display:flex; flex-direction:column; gap:6px;">
+                            <button type="button" onclick="changeHeight(10)" style="padding:6px 8px; border-radius:8px; border:none; background:var(--ember); color:#140600; font-weight:700; cursor:pointer;">+10</button>
+                            <button type="button" onclick="changeHeight(-10)" style="padding:6px 8px; border-radius:8px; border:none; background:#3a3a3a; color:var(--ink); font-weight:700; cursor:pointer;">-10</button>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label>Weight (kg)</label>
+                    <input type="number" step="0.1" name="weight" placeholder="Weight" value="{{ profile.weight if profile else '' }}" required>
+                </div>
+            </div>
+
+            <label>Target Weight (kg)</label>
+            <input type="number" step="0.1" name="target_weight" placeholder="Target Weight" value="{{ profile.target_weight if profile else '' }}" required>
+
+            <label>Fitness Goal</label>
+            <select name="fitness_goal" required>
+                <option value="" disabled {% if not profile %}selected{% endif %}>Select</option>
+                <option value="Fat Loss" {% if profile and profile.fitness_goal == 'Fat Loss' %}selected{% endif %}>Fat Loss</option>
+                <option value="Muscle Gain" {% if profile and profile.fitness_goal == 'Muscle Gain' %}selected{% endif %}>Muscle Gain</option>
+                <option value="Maintenance" {% if profile and profile.fitness_goal == 'Maintenance' %}selected{% endif %}>Maintenance</option>
+            </select>
+
+            <label>Activity Level</label>
+            <select name="activity_level" required>
+                <option value="" disabled {% if not profile %}selected{% endif %}>Select</option>
+                <option value="Sedentary" {% if profile and profile.activity_level == 'Sedentary' %}selected{% endif %}>Sedentary</option>
+                <option value="Light" {% if profile and profile.activity_level == 'Light' %}selected{% endif %}>Light</option>
+                <option value="Moderate" {% if profile and profile.activity_level == 'Moderate' %}selected{% endif %}>Moderate</option>
+                <option value="Active" {% if profile and profile.activity_level == 'Active' %}selected{% endif %}>Active</option>
+                <option value="Very Active" {% if profile and profile.activity_level == 'Very Active' %}selected{% endif %}>Very Active</option>
+            </select>
+
+            <button type="submit">Save Profile</button>
+        </form>
+    </div>
+    <script>
+        function changeHeight(delta) {
+            const input = document.getElementById('heightInput');
+            let val = parseInt(input.value, 10) || 0;
+            val += delta;
+            if (val < parseInt(input.min || 0, 10)) val = parseInt(input.min || 0, 10);
+            input.value = val;
+        }
+    </script>
+</body>
+</html>

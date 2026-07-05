@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Rise Back</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root{
+            --void:#08080d; --ember:#ff5000; --ember-light:#ff8147;
+            --gold:#d4a437; --gold-light:#f3cf6e; --ink:#f1ece0; --ink-dim:#8d8a9a;
+        }
+        *{ box-sizing:border-box; }
+        body{
+            margin:0; min-height:100vh;
+            display:flex; align-items:center; justify-content:center;
+            background:
+                radial-gradient(ellipse 900px 600px at 20% 0%, rgba(255,80,0,.10), transparent 60%),
+                radial-gradient(ellipse 900px 600px at 90% 100%, rgba(212,164,55,.08), transparent 60%),
+                var(--void);
+            color:var(--ink);
+            font-family:'Rajdhani', sans-serif;
+            text-align:center;
+            padding:24px;
+        }
+        .eyebrow{ font-size:12px; letter-spacing:3px; color:var(--gold); text-transform:uppercase; font-weight:700; margin-bottom:18px; }
+        h1{
+            font-family:'Cinzel', serif; font-size:clamp(44px,8vw,84px); font-weight:800;
+            letter-spacing:6px; margin:0;
+        }
+        h1 .rise{ color:var(--ember); text-shadow:0 0 30px rgba(255,80,0,.5); }
+        .tag{ font-size:14px; letter-spacing:2px; color:var(--ink-dim); text-transform:uppercase; margin-top:10px; font-weight:700; }
+        h3{ font-family:'Cinzel', serif; font-size:18px; color:var(--gold-light); margin-top:26px; font-weight:600; }
+        .btn-custom{
+            display:inline-block; margin-top:34px;
+            background:linear-gradient(135deg,var(--ember),#c83e00);
+            color:#1a0a00; border:none; padding:16px 38px;
+            border-radius:12px; font-weight:700; font-size:15px; letter-spacing:1px;
+            text-transform:uppercase; text-decoration:none;
+            box-shadow:0 0 26px rgba(255,80,0,.4);
+            transition:.25s;
+        }
+        .btn-custom:hover{ transform:translateY(-2px); box-shadow:0 0 36px rgba(255,80,0,.6); }
+    </style>
+</head>
+<body>
+    <div>
+        <div class="eyebrow">⚔ World of Ascension</div>
+        <h1><span class="rise">RISE</span> BACK</h1>
+        <div class="tag">Conquer Your Limits. Become Legend.</div>
+        <h3>Welcome, Warrior</h3>
+        <a href="/login" class="btn-custom">Let's Start Your Legacy</a>
+    </div>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Weight Tracker — Rise Back</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root{
+            --void:#08080d; --panel:#13131b; --ember:#ff5000;
+            --gold:#d4a437; --gold-light:#f3cf6e; --ink:#f1ece0; --ink-dim:#8d8a9a; --line:rgba(212,164,55,.25);
+        }
+        *{ box-sizing:border-box; }
+        body{
+            margin:0; min-height:100vh;
+            background:
+                radial-gradient(ellipse 800px 500px at 15% 10%, rgba(255,80,0,.10), transparent 60%),
+                radial-gradient(ellipse 800px 500px at 90% 90%, rgba(212,164,55,.08), transparent 60%),
+                var(--void);
+            color:var(--ink); font-family:'Rajdhani', sans-serif; padding:40px 20px;
+            display:flex; justify-content:center;
+        }
+        .wrap{ width:460px; }
+        .eyebrow{ font-size:11px; letter-spacing:3px; color:var(--gold); text-transform:uppercase; font-weight:700; }
+        h1{ font-family:'Cinzel',serif; font-size:28px; margin:8px 0 22px; letter-spacing:1px; }
+        .panel{ background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:28px; margin-bottom:22px; }
+        label{ font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--ink-dim); font-weight:700; display:block; margin-bottom:6px; }
+        input{
+            width:100%; padding:12px 14px; margin-bottom:16px;
+            background:#1a1a23; border:1px solid var(--line); border-radius:10px;
+            color:var(--ink); font-family:'Rajdhani',sans-serif; font-size:15px; font-weight:600;
+        }
+        input:focus{ outline:none; border-color:var(--gold); box-shadow:0 0 0 3px rgba(212,164,55,.15); }
+        button{
+            width:100%; padding:13px; border:none; border-radius:10px; cursor:pointer;
+            background:linear-gradient(135deg,var(--ember),#c83e00); color:#1a0a00;
+            font-weight:800; font-size:14px; letter-spacing:1px; text-transform:uppercase;
+            box-shadow:0 0 20px rgba(255,80,0,.35);
+        }
+        button:hover{ filter:brightness(1.08); }
+        h2{ font-family:'Cinzel',serif; font-size:16px; color:var(--gold-light); margin-bottom:12px; }
+        .log-row{ display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--line); font-size:14px; }
+        .log-row:last-child{ border-bottom:none; }
+        .log-row .w{ font-weight:700; color:var(--ember-light, #ff8147); }
+        .empty{ color:var(--ink-dim); font-size:13px; }
+        .back{ display:inline-block; margin-top:6px; color:var(--gold-light); text-decoration:none; font-size:13px; font-weight:700; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="eyebrow">📈 Track Your Transformation</div>
+        <h1>Weight Tracker</h1>
+
+        <div class="panel">
+            <form method="POST">
+                <label>Current Weight (kg)</label>
+                <input type="number" step="0.1" name="weight" placeholder="e.g. 78.5" required>
+                <button type="submit">Save Weight</button>
+            </form>
+        </div>
+
+        <div class="panel">
+            <h2>⚔ History</h2>
+            {% if logs %}
+                {% for log in logs %}
+                <div class="log-row">
+                    <span>{{ log.log_date }}</span>
+                    <span class="w">{{ log.weight }} kg</span>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="empty">No entries yet. Log your first weight above.</p>
+            {% endif %}
+        </div>
+
+        <a href="/dashboard" class="back">← Back To Dashboard</a>
+    </div>
+</body>
+</html>

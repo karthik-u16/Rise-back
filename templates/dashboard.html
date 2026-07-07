@@ -1212,38 +1212,6 @@
         }
 
         /* ---------- BOSS CALLOUT ---------- */
-        .boss-strip {
-            margin-top: 18px;
-            border-radius: 18px;
-            border: 1px solid rgba(224, 57, 74, .5);
-            background:
-                linear-gradient(0deg, rgba(0, 0, 0, .88), rgba(0, 0, 0, .35)),
-                linear-gradient(135deg, #1c0d12, #0c0a12);
-            padding: 18px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .boss-strip .eyebrow {
-            color: var(--crimson);
-        }
-
-        .boss-strip h3 {
-            font-size: 22px;
-            color: #ff6a6a;
-            margin-top: 4px;
-        }
-
-        .boss-strip p {
-            font-size: 12.5px;
-            color: var(--ink-dim);
-            max-width: 480px;
-            margin-top: 6px;
-        }
-
         .boss-btn {
             background: var(--crimson);
             color: #fff;
@@ -1893,22 +1861,6 @@
                         </div>
                     </div>
                 </div>
-
-                {% if not boss_defeated and current_boss %}
-                <div class="boss-strip">
-                    <div>
-                        <div class="eyebrow">👹 Region Boss</div>
-                        <h3>{{ current_boss.name }}</h3>
-                        <p>The final test of strength and discipline in {{ region_name }}. Defeat the guardian and
-                            claim
-                            your legacy.</p>
-                    </div>
-                    <form action="/boss-battle" method="POST">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="boss-btn">⚔ Enter Boss Battle</button>
-                    </form>
-                </div>
-                {% endif %}
 
                 <!-- Floating mentor button -->
             <button type="button" class="mentor-fab" onclick="toggleMentor(event)" title="Open Mentor" aria-label="Open mentor chat" aria-controls="mentor-popup" aria-expanded="false">

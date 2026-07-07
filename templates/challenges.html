@@ -76,9 +76,10 @@
                 <p style="margin-top:10px; color:var(--gold-light); font-size:13px;"><strong>Focus:</strong> {{ challenge.focus }}</p>
                 {% endif %}
             </div>
-            <a href="/complete/{{ level }}">
-                <button class="btn-rise">Complete Challenge</button>
-            </a>
+            <form method="POST" action="/complete/{{ level }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn-rise">Complete Challenge</button>
+            </form>
         </div>
         {% endfor %}
 

@@ -254,6 +254,7 @@
         <div class="panel">
             <h4>📝 Log A Workout</h4>
             <form method="POST" action="/workouts">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="log-grid">
                     <div>
                         <label>Exercise</label>

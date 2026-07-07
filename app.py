@@ -1,8 +1,9 @@
+from functools import wraps
 from flask import session
-from flask import Flask, render_template, redirect, url_for, request, jsonify
+from flask import Flask, render_template, redirect, url_for, request, jsonify, flash
+from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import date, timedelta
-import json
 import os
 import random
 
@@ -10,8 +11,15 @@ app = Flask(__name__)
 
 # Secret key: reads from environment variable in production, fallback for local dev only
 app.secret_key = os.environ.get("SECRET_KEY", "riseback_dev_key_change_in_prod")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") == "production",
+)
+csrf = CSRFProtect(app)
 
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import inspect, text
 
 # Production: set DATABASE_URL env var to a PostgreSQL connection string (e.g. from Render/Railway)
 # Local dev:  falls back to SQLite automatically — no setup needed
@@ -26,7 +34,33 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-PROGRESS_FILE = "riseback_progress.json"
+MAX_DAILY_WATER_ML = 3000
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if "user" not in session:
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def migrate_legacy_schema():
+    """Apply the one backwards-compatible column needed by pre-cleanup databases."""
+    inspector = inspect(db.engine)
+    if "water_tracker" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("water_tracker")}
+    if "water_date" not in columns:
+        with db.engine.begin() as connection:
+            connection.execute(text("ALTER TABLE water_tracker ADD COLUMN water_date DATE"))
+            connection.execute(
+                text("UPDATE water_tracker SET water_date = :today WHERE water_date IS NULL"),
+                {"today": date.today()},
+            )
 
 REGION_CONFIG = {
     1: {
@@ -219,15 +253,6 @@ BOSS_IMAGES = {
     5: "bosses/legacy_throne_guardian.png",
 }
 
-ACHIEVEMENTS = {
-    "First Blood": "Complete your first challenge",
-    "Water Warrior": "Drink 2500ml water",
-    "Boss Slayer": "Defeat your first boss",
-    "Iron Streak": "Reach a 7 day streak",
-    "Rise Back Legend": "Reach 75 XP",
-    "Iron Will": "Log your first workout",
-}
-
 REWARDS = {
     1: {
         "name": "💪 Confidence Core",
@@ -384,14 +409,14 @@ class WeightLog(db.Model):
 
     weight = db.Column(db.Float)
 
-    log_date = db.Column(db.Date)
+    log_date = db.Column(db.Date, nullable=False, default=date.today, index=True)
 
 
 class WorkoutLog(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
 
-    user_id = db.Column(db.Integer, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
 
     workout_date = db.Column(db.Date, nullable=False)
 
@@ -414,25 +439,20 @@ class WorkoutLog(db.Model):
 
 class WaterTracker(db.Model):
 
+    __table_args__ = (db.UniqueConstraint("user_id", "water_date"),)
+
     id = db.Column(db.Integer, primary_key=True)
 
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
 
     water_ml = db.Column(db.Integer, default=0)
 
-
-class MissionProgress(db.Model):
-
-    id = db.Column(db.Integer, primary_key=True)
-
-    user_id = db.Column(db.Integer)
-
-    mission_name = db.Column(db.String(200))
-
-    completed = db.Column(db.Boolean, default=False)
+    water_date = db.Column(db.Date, nullable=False, default=date.today, index=True)
 
 
 class DailyMission(db.Model):
+
+    __table_args__ = (db.UniqueConstraint("user_id", "mission_name", "mission_date"),)
 
     id = db.Column(db.Integer, primary_key=True)
 
@@ -458,6 +478,8 @@ class UserStreak(db.Model):
 
 class BossBattle(db.Model):
 
+    __table_args__ = (db.UniqueConstraint("user_id", "boss_level"),)
+
     id = db.Column(db.Integer, primary_key=True)
 
     user_id = db.Column(db.Integer, nullable=False)
@@ -468,6 +490,8 @@ class BossBattle(db.Model):
 
 
 class RewardChest(db.Model):
+
+    __table_args__ = (db.UniqueConstraint("user_id", "reward_name"),)
 
     id = db.Column(db.Integer, primary_key=True)
 
@@ -504,6 +528,8 @@ def get_badges(xp):
 
 
 class Achievement(db.Model):
+
+    __table_args__ = (db.UniqueConstraint("user_id", "achievement_name"),)
 
     id = db.Column(db.Integer, primary_key=True)
 
@@ -556,61 +582,6 @@ def get_ai_message(
 
     return "Every strong body starts as an unfinished one. Keep building."
 
-def mentor_response(message):
-
-    message = message.lower()
-
-    if "insecure" in message or "ugly" in message:
-        return (
-            "Every strong body begins as an unfinished one. "
-            "Do not judge yourself by today's reflection. "
-            "Judge yourself by today's effort."
-        )
-
-    elif "tired" in message:
-        return (
-            "Fatigue is temporary. Discipline remains. "
-            "Rest if needed, but never quit."
-        )
-
-    elif "motivation" in message:
-        return (
-            "Motivation comes and goes. "
-            "Discipline stays when motivation leaves."
-        )
-
-    elif "sad" in message:
-        return (
-            "Even champions face dark days. "
-            "The goal is not to avoid struggle. "
-            "The goal is to keep moving through it."
-        )
-
-    elif "give up" in message:
-        return (
-            "The person who changes his life is not the most talented. "
-            "It is the one who refuses to stop."
-        )
-
-    elif "fat loss" in message:
-        return (
-            "Focus on consistency. "
-            "One good day means little. "
-            "One hundred good days changes everything."
-        )
-
-    elif "muscle" in message:
-        return (
-            "Feed the body. Challenge the body. Recover the body. "
-            "Repeat."
-        )
-
-    else:
-        return (
-            "Warrior, keep your eyes on today's mission. "
-            "Small victories create legendary results."
-        )
-
 def get_activity_factor(activity_level):
     return {
         "Sedentary": 1.2,
@@ -619,6 +590,22 @@ def get_activity_factor(activity_level):
         "Active": 1.725,
         "Very Active": 1.9,
     }.get(activity_level, 1.2)
+
+
+def get_calorie_mission(profile):
+    if not profile or not all((profile.gender, profile.weight, profile.height, profile.age)):
+        return None
+
+    bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age
+    bmr += 5 if profile.gender == "Male" else -161
+    maintenance = round(bmr * get_activity_factor(profile.activity_level))
+    bmi = profile.weight / ((profile.height / 100) ** 2)
+
+    if 25 <= bmi < 30:
+        return f"Stay under {maintenance - 500} kcal"
+    if bmi < 18.5:
+        return f"Reach {maintenance + 300} kcal"
+    return f"Stay near {maintenance} kcal"
 
 
 def get_evolution_label(xp):
@@ -646,6 +633,12 @@ def get_mentor_response(
     challenge_progress,
 ):
     text = user_message.lower().strip()
+
+    if any(phrase in text for phrase in ["hurt myself", "self harm", "suicide", "end my life"]):
+        return (
+            "I'm really sorry you're carrying this. Please pause the workout and contact local "
+            "emergency services or a trusted person who can stay with you now. You deserve human support."
+        )
 
     # Quick emotional checks
     if "insecure" in text:
@@ -815,14 +808,12 @@ def login():
 
 
 @app.route("/dashboard")
+@login_required
 def dashboard():
-
-    if "user" not in session:
-        return redirect(url_for("login"))
-
     user_id = session["user"]
+    today = date.today()
 
-    water = WaterTracker.query.filter_by(user_id=user_id).first()
+    water = WaterTracker.query.filter_by(user_id=user_id, water_date=today).first()
 
     water_limit_reached = False
 
@@ -831,7 +822,7 @@ def dashboard():
 
     if not water:
 
-        water = WaterTracker(user_id=user_id, water_ml=0)
+        water = WaterTracker(user_id=user_id, water_ml=0, water_date=today)
 
         db.session.add(water)
         db.session.commit()
@@ -845,7 +836,7 @@ def dashboard():
     maintenance_calories = None
     fat_loss_calories = None
     muscle_gain_calories = None
-    if profile:
+    if profile and all((profile.gender, profile.weight, profile.height, profile.age)):
 
         if profile.gender == "Male":
 
@@ -975,71 +966,57 @@ def dashboard():
 
     missions = []
 
-    today = date.today()
-
-    water_done = DailyMission.query.filter_by(
-        user_id=user_id, mission_name="Drink 2500ml Water", mission_date=today
-    ).first()
+    completed_today = {
+        mission.mission_name
+        for mission in DailyMission.query.filter_by(user_id=user_id, mission_date=today).all()
+    }
+    water_done = "Drink 2500ml Water" in completed_today
 
     missions.append(
         {
             "title": "Drink 2500ml Water",
             "reward": 5,
-            "completed": water_done is not None,
+            "completed": water_done,
         }
     )
 
     if goal_plan == "Fat Loss Program":
-        calorie_done = DailyMission.query.filter_by(
-            user_id=user_id,
-            mission_name=f"Stay under {fat_loss_calories} kcal",
-            mission_date=today,
-        ).first()
+        calorie_done = f"Stay under {fat_loss_calories} kcal" in completed_today
         missions.append(
             {
                 "title": f"Stay under {fat_loss_calories} kcal",
                 "reward": 10,
-                "completed": calorie_done is not None,
+                "completed": calorie_done,
             }
         )
 
     elif goal_plan == "Muscle Gain Program":
-        calorie_done = DailyMission.query.filter_by(
-            user_id=user_id,
-            mission_name=f"Reach {muscle_gain_calories} kcal",
-            mission_date=today,
-        ).first()
+        calorie_done = f"Reach {muscle_gain_calories} kcal" in completed_today
         missions.append(
             {
                 "title": f"Reach {muscle_gain_calories} kcal",
                 "reward": 10,
-                "completed": calorie_done is not None,
+                "completed": calorie_done,
             }
         )
 
     else:
-        calorie_done = DailyMission.query.filter_by(
-            user_id=user_id,
-            mission_name=f"Stay near {maintenance_calories} kcal",
-            mission_date=today,
-        ).first()
+        calorie_done = f"Stay near {maintenance_calories} kcal" in completed_today
         missions.append(
             {
                 "title": f"Stay near {maintenance_calories} kcal",
                 "reward": 10,
-                "completed": calorie_done is not None,
+                "completed": calorie_done,
             }
         )
 
-    challenge_done = DailyMission.query.filter_by(
-        user_id=user_id, mission_name="Complete Today's Challenge", mission_date=today
-    ).first()
+    challenge_done = "Complete Today's Challenge" in completed_today
 
     missions.append(
         {
             "title": "Complete Today's Challenge",
             "reward": 20,
-            "completed": challenge_done is not None,
+            "completed": challenge_done,
         }
     )
 
@@ -1070,7 +1047,6 @@ def dashboard():
     region_progress = min(region_progress, 100)
 
     xp_percent = min((progress.xp / 30) * 100, 100)
-    region_xp_percent = region_progress
 
     badges = get_badges(progress.xp)
 
@@ -1137,27 +1113,11 @@ def dashboard():
 
     evolution_rate = min(round((progress.xp / 75) * 100), 100)
 
-    aura_class = "aura-mortal"
-
-    if evolution == "⚔ WARRIOR":
-        aura_class = "aura-warrior"
-
-    elif evolution == "🔥 DEMIGOD":
-        aura_class = "aura-demigod"
-
-    elif evolution == "👑 GOD":
-        aura_class = "aura-god"
-
-    elif evolution == "✨ CELESTIAL":
-        aura_class = "aura-celestial"
-
     shadow_boss = None
 
     if evolution == "✨ CELESTIAL":
 
         shadow_boss = ShadowBoss.query.filter_by(user_id=user_id).first()
-
-    boss_image = BOSS_IMAGES.get(progress.level)
 
     boss_names = {
         1: "Foundation Guardian",
@@ -1165,14 +1125,6 @@ def dashboard():
         3: "Arena Destroyer",
         4: "Legend Emperor",
         5: "Legacy Throne Guardian",
-    }
-
-    boss_images = {
-        1: "foundation_guardian.png",
-        2: "combat_warlord.png",
-        3: "arena_destroyer.png",
-        4: "legend_emperor.png",
-        5: "legacy_throne_guardian.png",
     }
 
     defeated_bosses = BossBattle.query.filter_by(user_id=user_id).all()
@@ -1193,17 +1145,6 @@ def dashboard():
 
     boss_available = region_completed and not boss_defeated
 
-    region_data = {
-        1: {
-            "name": "Foundation Camp",
-            "description": "Build discipline and consistency.",
-        },
-        2: {"name": "Combat Valley", "description": "Push your limits."},
-        3: {"name": "Elite Arena", "description": "Prove your endurance."},
-        4: {"name": "Legend Citadel", "description": "Stand among the strongest."},
-        5: {"name": "Legacy Throne", "description": "Face your final challenge."},
-    }
-
     mentor_reply = get_ai_message(
         streak.streak_count if streak else 0,
         evolution,
@@ -1219,16 +1160,6 @@ def dashboard():
     mentor_response = session.get("mentor_response", mentor_reply)
     mentor_history = session.get("mentor_history", [])
     
-    mentor_reply = session.get(
-        "mentor_reply",
-        get_ai_message(
-            streak.streak_count if streak else 0,
-            evolution,
-            boss_available,
-            region_name,
-            xp_percent
-        )
-    )
     ai_message = mentor_reply
     
     return render_template(
@@ -1250,7 +1181,6 @@ def dashboard():
         region_target=region_target,
         region_weeks=region_weeks,
         xp_percent=xp_percent,
-        region_xp_percent=region_xp_percent,
         badges=badges,
         profile=profile,
         goal_percent=goal_percent,
@@ -1272,27 +1202,20 @@ def dashboard():
         rewards=rewards,
         evolution=evolution,
         evolution_rate=evolution_rate,
-        aura_class=aura_class,
         shadow_boss=shadow_boss,
-        boss_image=boss_image,
         boss_names=boss_names,
-        boss_images=boss_images,
+        defeated_bosses=defeated_bosses,
         boss_description=boss_description,
         boss_available=boss_available,
-        region_data=region_data,
         ai_message=ai_message,
         mentor_response=mentor_response,
         mentor_history=mentor_history,
-        mentor_reply=mentor_reply,
     )
 
 
 @app.route("/workouts", methods=["GET", "POST"])
+@login_required
 def workouts():
-
-    if "user" not in session:
-        return redirect(url_for("login"))
-
     user_id = session["user"]
 
     today = date.today()
@@ -1418,6 +1341,7 @@ def workouts():
 
 
 @app.route("/challenges/<int:level>")
+@login_required
 def challenges(level):
 
     data = get_region_challenges(level)
@@ -1433,11 +1357,15 @@ def challenges(level):
     )
 
 
-@app.route("/complete/<int:level>")
+@app.route("/complete/<int:level>", methods=["POST"])
+@login_required
 def complete(level):
 
     user_id = session["user"]
     progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    if not progress or level != progress.level:
+        return redirect(url_for("dashboard"))
 
     today = date.today()
 
@@ -1500,9 +1428,6 @@ def complete(level):
         if not iron:
 
             db.session.add(Achievement(user_id=user_id, achievement_name="Iron Streak"))
-    if progress.xp >= progress.level * 6:
-        progress.level = min(5, progress.level + 1)
-
     existing = DailyMission.query.filter_by(
         user_id=user_id, mission_name="Complete Today's Challenge", mission_date=today
     ).first()
@@ -1524,34 +1449,30 @@ def complete(level):
     return redirect(url_for("dashboard"))
 
 
-@app.route("/add-water/<int:amount>")
+@app.route("/add-water/<int:amount>", methods=["POST"])
+@login_required
 def add_water(amount):
-
-    if "user" not in session:
-        return redirect(url_for("login"))
-
     user_id = session["user"]
+    today = date.today()
 
-    water = WaterTracker.query.filter_by(user_id=user_id).first()
+    if amount not in (250, 500):
+        return redirect(url_for("dashboard"))
+
+    water = WaterTracker.query.filter_by(user_id=user_id, water_date=today).first()
 
     if not water:
 
-        water = WaterTracker(user_id=user_id, water_ml=0)
+        water = WaterTracker(user_id=user_id, water_ml=0, water_date=today)
 
         db.session.add(water)
 
-    MAX_WATER = 3000
-
     # Stop adding if already at limit
-    if water.water_ml >= MAX_WATER:
-        return """
-        <h3>⚠ Daily water limit reached (3000 ml)</h3>
-        <p>Excessive water intake may affect electrolyte balance.</p>
-        <a href='/dashboard'>Back to Dashboard</a>
-        """
+    if water.water_ml >= MAX_DAILY_WATER_ML:
+        flash("Daily water limit reached.", "warning")
+        return redirect(url_for("dashboard"))
 
     # Add water but never exceed limit
-    water.water_ml = min(water.water_ml + amount, MAX_WATER)
+    water.water_ml = min(water.water_ml + amount, MAX_DAILY_WATER_ML)
 
     # Auto-complete water mission at 2500 ml
     if water.water_ml >= 2500:
@@ -1564,8 +1485,6 @@ def add_water(amount):
             db.session.add(
                 Achievement(user_id=user_id, achievement_name="Water Warrior")
             )
-
-        from datetime import date
 
         existing = DailyMission.query.filter_by(
             user_id=user_id,
@@ -1595,13 +1514,14 @@ def add_water(amount):
 
 
 @app.route("/complete-mission", methods=["POST"])
+@login_required
 def complete_mission():
 
     user_id = session["user"]
 
     mission_name = request.form["mission"]
 
-    water = WaterTracker.query.filter_by(user_id=user_id).first()
+    water = WaterTracker.query.filter_by(user_id=user_id, water_date=date.today()).first()
 
     if mission_name == "Drink 2500ml Water":
 
@@ -1614,7 +1534,18 @@ def complete_mission():
             </h3>
             """
 
-    xp = int(request.form["xp"])
+    profile = UserProfile.query.filter_by(user_id=user_id).first()
+    calorie_mission = get_calorie_mission(profile)
+    allowed_rewards = {
+        "Drink 2500ml Water": 5,
+        "Complete Today's Challenge": 20,
+    }
+    if calorie_mission:
+        allowed_rewards[calorie_mission] = 10
+    mission_name = mission_name.strip()
+    xp = allowed_rewards.get(mission_name)
+    if xp is None:
+        return redirect(url_for("dashboard"))
 
     today = date.today()
 
@@ -1645,12 +1576,28 @@ def complete_mission():
     return redirect(url_for("dashboard"))
 
 
-@app.route("/boss-battle")
+@app.route("/boss-battle", methods=["POST"])
+@login_required
 def boss_battle():
 
     user_id = session["user"]
 
     progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    completed_names = {
+        mission.mission_name
+        for mission in DailyMission.query.filter_by(user_id=user_id, mission_date=date.today()).all()
+    }
+    calorie_complete = any(
+        name.startswith(("Stay under ", "Reach ", "Stay near "))
+        for name in completed_names
+    )
+    if not {
+        "Drink 2500ml Water",
+        "Complete Today's Challenge",
+    }.issubset(completed_names) or not calorie_complete:
+        flash("Complete today's missions before entering the boss battle.", "warning")
+        return redirect(url_for("dashboard"))
 
     existing = BossBattle.query.filter_by(
         user_id=user_id, boss_level=progress.level
@@ -1720,7 +1667,8 @@ def boss_battle():
     """
 
 
-@app.route("/shadow-boss")
+@app.route("/shadow-boss", methods=["POST"])
+@login_required
 def shadow_boss_battle():
 
     user_id = session["user"]
@@ -1762,16 +1710,17 @@ def shadow_boss_battle():
     """
 
 @app.route("/mentor-chat", methods=["POST"])
+@login_required
 def mentor_chat():
-
-    if "user" not in session:
-        return redirect(url_for("login"))
-
     user_id = session["user"]
-    user_message = request.form.get("message", "").strip()
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    if not progress or progress.xp < 75:
+        return redirect(url_for("dashboard"))
+    user_message = request.form.get("message", "").strip()[:500]
 
     progress = UserProgress.query.filter_by(user_id=user_id).first()
-    water = WaterTracker.query.filter_by(user_id=user_id).first()
+    water = WaterTracker.query.filter_by(user_id=user_id, water_date=date.today()).first()
     profile = UserProfile.query.filter_by(user_id=user_id).first()
     streak = UserStreak.query.filter_by(user_id=user_id).first()
 
@@ -1802,7 +1751,7 @@ def mentor_chat():
     activity_factor = get_activity_factor(profile.activity_level) if profile else 1.2
     calorie_target = 0
 
-    if profile:
+    if profile and all((profile.gender, profile.weight, profile.height, profile.age)):
         bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age + (5 if profile.gender == "Male" else -161)
         calorie_target = round(bmr * activity_factor)
 
@@ -1856,8 +1805,8 @@ def mentor_chat():
     if user_message:
         history.append({"sender": "user", "text": user_message})
     history.append({"sender": "mentor", "text": response})
-    # keep last 20 messages
-    session["mentor_history"] = history[-20:]
+    # Flask's default session is cookie-backed; keep a small context window.
+    session["mentor_history"] = history[-6:]
     session["mentor_response"] = response
 
     # If this is an AJAX request, return JSON so the frontend can update without reload
@@ -1866,19 +1815,8 @@ def mentor_chat():
 
     return redirect(url_for("dashboard"))
 
-@app.route("/reset-boss")
-def reset_boss():
-
-    user_id = session["user"]
-
-    BossBattle.query.filter_by(user_id=user_id).delete()
-
-    db.session.commit()
-
-    return redirect("/dashboard")
-
-
-@app.route("/logout")
+@app.route("/logout", methods=["POST"])
+@login_required
 def logout():
 
     session.pop("user", None)
@@ -1886,24 +1824,19 @@ def logout():
     return redirect(url_for("home"))
 
 
+@app.route("/healthz")
+def healthcheck():
+    return {"status": "ok"}
+
+
 with app.app_context():
     db.create_all()
-
-
-@app.route("/db-test")
-def db_test():
-
-    users = User.query.all()
-
-    return f"Users in database: {len(users)}"
+    migrate_legacy_schema()
 
 
 @app.route("/profile", methods=["GET", "POST"])
+@login_required
 def profile():
-
-    if "user" not in session:
-        return redirect(url_for("login"))
-
     user_id = session["user"]
 
     existing_profile = UserProfile.query.filter_by(user_id=user_id).first()
@@ -1943,18 +1876,15 @@ def profile():
 
 
 @app.route("/weight", methods=["GET", "POST"])
+@login_required
 def weight():
-
-    if "user" not in session:
-        return redirect(url_for("login"))
-
     user_id = session["user"]
 
     if request.method == "POST":
 
         weight = request.form["weight"]
 
-        log = WeightLog(user_id=user_id, weight=weight)
+        log = WeightLog(user_id=user_id, weight=weight, log_date=date.today())
 
         db.session.add(log)
         db.session.commit()

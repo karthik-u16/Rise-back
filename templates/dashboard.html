@@ -201,7 +201,8 @@
             align-items: center;
         }
 
-        .top-links a {
+        .top-links a,
+        .top-links .btn-link {
             font-size: 11px;
             letter-spacing: 1px;
             text-transform: uppercase;
@@ -209,11 +210,19 @@
             font-weight: 700;
         }
 
+        .top-links .btn-link {
+            border: 0;
+            background: transparent;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
         .top-links a:hover {
             color: var(--gold-light);
         }
 
-        .top-links a.logout {
+        .top-links a.logout,
+        .top-links .logout {
             color: var(--crimson);
         }
 
@@ -271,6 +280,10 @@
             padding: 10px 12px;
             cursor: pointer;
             transition: .25s;
+            width: 100%;
+            color: inherit;
+            font-family: inherit;
+            text-align: left;
         }
 
         .vault-btn:hover {
@@ -1687,10 +1700,21 @@
             color: white;
 
         }
+        .flash-stack { position: fixed; top: 16px; right: 16px; z-index: 3000; }
+        .flash-message { padding: 12px 16px; border: 1px solid var(--gold); border-radius: 8px; background: #17131f; }
+        .flash-message.warning { border-color: var(--crimson); }
     </style>
 </head>
 
 <body>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-stack" role="status" aria-live="polite">
+        {% for category, message in messages %}<div class="flash-message {{ category }}">{{ message }}</div>{% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
 
     <!-- TOP BAR -->
     <div class="topbar">
@@ -1726,7 +1750,10 @@
             <a href="/profile">Profile</a>
             <a href="/weight">Weight</a>
             <a href="/">Home</a>
-            <a href="/logout" class="logout">Logout</a>
+            <form action="/logout" method="POST" style="margin:0;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="logout btn-link">Logout</button>
+            </form>
         </div>
     </div>
 
@@ -1736,27 +1763,27 @@
         <!-- SIDEBAR -->
         <div class="sidebar">
 
-            <div class="vault-btn" onclick="toggleVault()">
+            <button type="button" class="vault-btn" onclick="toggleVault()" aria-controls="vault" aria-expanded="false">
                 <div class="vault-icon">
-                    <img src="{{ url_for('static', filename='forms/transformation_vault.png') }}" alt="Transformation Vault">
+                    <img src="{{ url_for('static', filename='forms/transformation_vault.webp') }}" alt="Transformation Vault" loading="lazy">
                 </div>
                 <div>
                     <div class="title">Transformation Vault</div>
                     <div class="count">Rewards: {{ rewards|length }}</div>
                 </div>
                 <div class="chev">❯</div>
-            </div>
+            </button>
 
-            <div class="vault-btn" onclick="toggleBossVault()">
+            <button type="button" class="vault-btn" onclick="toggleBossVault()" aria-controls="boss-vault" aria-expanded="false">
                 <div class="vault-icon">
-                    <img src="{{ url_for('static', filename='forms/boss_vault.png') }}" alt="Boss Vault">
+                    <img src="{{ url_for('static', filename='forms/boss_vault.webp') }}" alt="Boss Vault" loading="lazy">
                 </div>
                 <div>
                     <div class="title">Boss Vault</div>
                     <div class="count">Bosses Defeated: {{ defeated_bosses|length }}</div>
                 </div>
                 <div class="chev">❯</div>
-            </div>
+            </button>
 
             <div class="panel">
                 <h4 style="margin-bottom:12px;">Forms Unlocked</h4>
@@ -1798,7 +1825,7 @@
         <!-- WORLD + MENTOR -->
         <div class="world-section">
             <div class="map-card"
-                style="background-image: url('/static/bosses/ChatGPT Image Jun 29, 2026, 10_20_19 AM.png'); background-size: cover; background-position: center; height: 620px; padding: 30px;">
+                style="background-image: url('/static/bosses/ChatGPT Image Jun 29, 2026, 10_20_19 AM.webp'); background-size: cover; background-position: center; min-height: 620px; padding: 30px;">
                 <div class="map-head">
                     <h2>🗺 Campaign Map</h2>
                     <div class="region-now">Current Region: {{ region_name }}</div>
@@ -1876,16 +1903,19 @@
                             claim
                             your legacy.</p>
                     </div>
-                    <a href="/boss-battle" class="boss-btn">⚔ Enter Boss Battle</a>
+                    <form action="/boss-battle" method="POST">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="boss-btn">⚔ Enter Boss Battle</button>
+                    </form>
                 </div>
                 {% endif %}
 
                 <!-- Floating mentor button -->
-                <div class="mentor-fab" onclick="toggleMentor(event)" title="Open Mentor">
+            <button type="button" class="mentor-fab" onclick="toggleMentor(event)" title="Open Mentor" aria-label="Open mentor chat" aria-controls="mentor-popup" aria-expanded="false">
                     <div class="mentor-icon">⚡</div>
                 </div>
 
-            </div>
+            </button>
 
             <div class="panel mentor-panel" style="margin-top:18px;">
                 <div class="mentor-icon-card">⚡</div>
@@ -1896,14 +1926,14 @@
             </div>
 
             <div id="mentor-overlay" class="mentor-overlay" style="display:none;" onclick="toggleMentor(event)"></div>
-            <div id="mentor-popup" class="mentor-popup" style="display:none;">
+            <div id="mentor-popup" class="mentor-popup" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="mentor-title">
                 <div class="mentor-header">
-                    <div>⚡ RONALDO</div>
+                    <div id="mentor-title">⚡ ARIS</div>
                     <span class="mentor-status">● ONLINE</span>
                 </div>
                 <div class="mentor-body">
                     <div class="mentor-image">
-                        <img src="{{ url_for('static', filename='mentor/aris.png') }}" alt="Ronaldo">
+                        <img src="{{ url_for('static', filename='mentor/aris.png') }}" alt="Aris, your fitness mentor">
                     </div>
                     <div class="mentor-chat">
                         <div class="chat-list" id="mentor-chat-list">
@@ -1916,8 +1946,9 @@
                             {% endif %}
                         </div>
                         <form action="/mentor-chat" method="POST" id="mentor-form">
-                            <input type="text" id="mentor-input" name="message" placeholder="Ask Ronaldo anything...">
-                            <button type="submit">➤</button>
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="text" id="mentor-input" name="message" maxlength="500" autocomplete="off" placeholder="Ask Aris about your next step..." aria-label="Message Aris">
+                            <button type="submit" aria-label="Send message">➤</button>
                         </form>
                     </div>
                 </div>
@@ -1973,8 +2004,8 @@
                     <a href="/challenges/{{ unlocked_level }}" class="btn btn-ember">⚔ Start Challenge</a>
                     {% else %}
                     <form action="/complete-mission" method="POST" style="margin:0;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="mission" value="{{ mission.title }}">
-                        <input type="hidden" name="xp" value="{{ mission.reward }}">
                         <button class="btn btn-good">Complete Mission</button>
                     </form>
                     {% endif %}
@@ -2059,8 +2090,14 @@
                 {% if water_limit_reached %}
                 <button class="btn btn-done" disabled>Water Limit Reached</button>
                 {% else %}
-                <a href="/add-water/250" class="btn btn-water">+250 ml</a>
-                <a href="/add-water/500" class="btn btn-water">+500 ml</a>
+                <form action="/add-water/250" method="POST" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-water">+250 ml</button>
+                </form>
+                <form action="/add-water/500" method="POST" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-water">+500 ml</button>
+                </form>
                 {% endif %}
             </div>
 
@@ -2079,6 +2116,7 @@
 
             <div class="panel" style="margin-top:18px;">
                 <h4>Goal Progress</h4>
+                {% if profile and profile.target_weight %}
                 <div class="progress-track">
                     <div class="progress-fill good" style="width:{{ goal_percent }}%;">{% if goal_percent > 0 %}{{
                         goal_percent }}%{% endif %}</div>
@@ -2086,6 +2124,9 @@
                 <p style="margin-top:10px;">Target Weight: {{ profile.target_weight }} kg &nbsp;•&nbsp; Goal
                     Completion:
                     {{ goal_percent }}%</p>
+                {% else %}
+                <p class="empty">Complete your profile to set a target weight.</p>
+                {% endif %}
             </div>
 
             <div class="panel" style="margin-top:18px;">
@@ -2112,8 +2153,10 @@
                 {% if shadow_boss and shadow_boss.defeated %}
                 <button class="btn btn-good" disabled style="margin-top:10px;">👑 RISE BACK LEGEND</button>
                 {% else %}
-                <a href="/shadow-boss" class="btn boss-btn" style="margin-top:10px; display:inline-block;">⚔ FACE
-                    DESTINY</a>
+                <form action="/shadow-boss" method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn boss-btn" style="margin-top:10px;">⚔ FACE DESTINY</button>
+                </form>
                 {% endif %}
             </div>
             {% endif %}
@@ -2217,17 +2260,17 @@
     </script>
 
     <script>
-        function renderMentorThread() {
+        const initialMentorHistory = {{ mentor_history|tojson }};
+
+        function renderMentorThread(history = initialMentorHistory) {
             const chatList = document.getElementById('mentor-chat-list');
             if (!chatList) return;
-
-            const history = JSON.parse(sessionStorage.getItem('mentorThread') || '[]');
             chatList.innerHTML = '';
 
             if (history.length > 0) {
                 history.forEach(item => {
                     const bubble = document.createElement('div');
-                    bubble.className = 'chat-bubble ' + (item.type === 'user' ? 'user' : 'mentor');
+                    bubble.className = 'chat-bubble ' + (item.sender === 'user' ? 'user' : 'mentor');
                     bubble.textContent = item.text;
                     chatList.appendChild(bubble);
                 });
@@ -2289,11 +2332,7 @@
                         container.insertBefore(chatList, container.firstChild);
                     }
 
-                    const history = JSON.parse(sessionStorage.getItem('mentorThread') || '[]');
-                    history.push({ type: 'user', text });
-                    history.push({ type: 'mentor', text: js.response });
-                    sessionStorage.setItem('mentorThread', JSON.stringify(history));
-                    renderMentorThread();
+                    renderMentorThread(js.history || []);
 
                     input.value = '';
                     input.focus();
@@ -2435,11 +2474,10 @@
 
             </p>
 
-            <a href="/boss-battle" class="boss-btn">
-
-                ⚔ Enter Boss Battle
-
-            </a>
+            <form action="/boss-battle" method="POST">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="boss-btn">⚔ Enter Boss Battle</button>
+            </form>
 
         </div>
 
@@ -2472,6 +2510,8 @@
             if (!p || !o) return;
             p.style.display = show ? 'flex' : 'none';
             o.style.display = show ? 'block' : 'none';
+            const fab = document.querySelector('.mentor-fab');
+            if (fab) fab.setAttribute('aria-expanded', show ? 'true' : 'false');
             if (show) {
                 const input = document.getElementById('mentor-input');
                 if (input) {
@@ -2500,6 +2540,10 @@
                     setMentorVisible(false);
                 }
             }
+        });
+
+        document.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Escape') setMentorVisible(false);
         });
     </script>
 

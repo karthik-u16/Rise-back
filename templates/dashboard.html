@@ -1880,12 +1880,12 @@
             <div id="mentor-overlay" class="mentor-overlay" style="display:none;" onclick="toggleMentor(event)"></div>
             <div id="mentor-popup" class="mentor-popup" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="mentor-title">
                 <div class="mentor-header">
-                    <div id="mentor-title">⚡ ARIS</div>
+                    <div id="mentor-title">⚡ RONALDO</div>
                     <span class="mentor-status">● ONLINE</span>
                 </div>
                 <div class="mentor-body">
                     <div class="mentor-image">
-                        <img src="{{ url_for('static', filename='mentor/aris.png') }}" alt="Aris, your fitness mentor">
+                        <img src="{{ url_for('static', filename='mentor/aris.png') }}" alt="RONALDO, your fitness mentor">
                     </div>
                     <div class="mentor-chat">
                         <div class="chat-list" id="mentor-chat-list">
@@ -1899,7 +1899,7 @@
                         </div>
                         <form action="/mentor-chat" method="POST" id="mentor-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="text" id="mentor-input" name="message" maxlength="500" autocomplete="off" placeholder="Ask Aris about your next step..." aria-label="Message Aris">
+                            <input type="text" id="mentor-input" name="message" maxlength="500" autocomplete="off" placeholder="Ask RONALDO about your next step..." aria-label="Message RONALDO">
                             <button type="submit" aria-label="Send message">➤</button>
                         </form>
                     </div>

@@ -49,9 +49,18 @@
             box-shadow:0 0 16px rgba(255,80,0,.35);
         }
         .btn-rise:hover{ filter:brightness(1.08); }
+        .btn-rise:disabled{ cursor:not-allowed; filter:grayscale(.3) brightness(.85); }
+        .challenge-timer-block{ margin-left:auto; flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:8px; }
+        .timer-display{
+            font-family:'Cinzel',serif; font-size:20px; font-weight:700;
+            color:var(--gold-light); letter-spacing:1px;
+            min-width:90px; text-align:center;
+        }
+        .timer-label{ font-size:10.5px; letter-spacing:1.5px; text-transform:uppercase; color:var(--ink-dim); }
         @media (max-width:560px){
             .challenge-card{ flex-wrap:wrap; }
             .btn-rise{ margin-left:0; width:100%; text-align:center; }
+            .challenge-timer-block{ margin-left:0; width:100%; }
         }
         .back{ display:inline-block; margin-top:14px; color:var(--gold-light); text-decoration:none; font-size:13px; font-weight:700; }
     </style>
@@ -76,14 +85,59 @@
                 <p style="margin-top:10px; color:var(--gold-light); font-size:13px;"><strong>Focus:</strong> {{ challenge.focus }}</p>
                 {% endif %}
             </div>
-            <form method="POST" action="/complete/{{ level }}">
+            <form method="POST" action="/complete/{{ level }}" id="challenge-form-{{ loop.index }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn-rise">Complete Challenge</button>
             </form>
+            <div class="challenge-timer-block" data-duration="{{ challenge.duration }}" data-form="challenge-form-{{ loop.index }}">
+                <button type="button" class="btn-rise" onclick="startChallengeTimer(this)">Start Challenge</button>
+            </div>
         </div>
         {% endfor %}
 
         <a href="/dashboard" class="back">← Back To Dashboard</a>
     </div>
+
+    <script>
+        function formatTime(totalSeconds) {
+            const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+            const s = (totalSeconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        function startChallengeTimer(btn) {
+            const block = btn.closest('.challenge-timer-block');
+            const duration = parseInt(block.dataset.duration, 10);
+            const formId = block.dataset.form;
+            let remaining = duration;
+
+            btn.disabled = true;
+            btn.textContent = 'In Progress…';
+
+            const label = document.createElement('div');
+            label.className = 'timer-label';
+            label.textContent = 'Time Remaining';
+
+            const display = document.createElement('div');
+            display.className = 'timer-display';
+            display.textContent = formatTime(remaining);
+
+            block.appendChild(label);
+            block.appendChild(display);
+
+            const interval = setInterval(() => {
+                remaining -= 1;
+
+                if (remaining <= 0) {
+                    clearInterval(interval);
+                    display.textContent = 'Done!';
+                    btn.textContent = 'Completing…';
+                    document.getElementById(formId).submit();
+                    return;
+                }
+
+                display.textContent = formatTime(remaining);
+            }, 1000);
+        }
+    </script>
 </body>
 </html>

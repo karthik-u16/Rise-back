@@ -4,6 +4,8 @@ from flask import Flask, render_template, redirect, url_for, request, jsonify, f
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import date, timedelta
+from dotenv import load_dotenv
+load_dotenv()
 import os
 import random
 

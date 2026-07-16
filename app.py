@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 import os
 import random
+import requests
 
 app = Flask(__name__)
 
@@ -539,7 +540,61 @@ class Achievement(db.Model):
 
     achievement_name = db.Column(db.String(100), nullable=False)
 
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_MODEL = "gemini-3.1-flash-lite"
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
 
+SELF_HARM_PHRASES = [
+    "hurt myself", "self harm", "suicide", "end my life",
+    "kill myself", "want to die"
+]
+
+def check_self_harm(user_message):
+    lowered = user_message.lower()
+    return any(phrase in lowered for phrase in SELF_HARM_PHRASES)
+
+
+def build_mentor_system_prompt(context):
+    return f"""You are a fitness mentor inside a gamified fitness app called Rise Back.
+The app has a warrior/ascension theme — speak with intensity, encouragement, and directness, like a mentor training a warrior.
+
+Current player state:
+- Region: {context['region_name']} (Level {context['level']})
+- Streak: {context['streak']} days
+- Water today: {context['water_ml']}ml / {MAX_DAILY_WATER_ML}ml
+- Fitness plan: {context['goal_plan']}
+- Boss available: {context['boss_available']}
+- Today's daily missions completed: {context['challenge_progress']}%
+
+You can answer ANY question the player asks — nutrition, exercise form, general motivation, or anything else on their mind. Don't refuse or deflect off-topic questions; you're a real coach, not a narrow game-hint bot.
+Keep replies short: 2-4 sentences, mobile-friendly.
+Never give specific medical diagnoses, injury treatment, or extreme diet/dosage advice — for those, tell them to see a doctor or professional.
+"""
+
+
+def get_gemini_mentor_reply(user_message, context, history):
+    system_prompt = build_mentor_system_prompt(context)
+
+    contents = []
+    for entry in history[-6:]:
+        role = "user" if entry.get("sender") == "user" else "model"
+        contents.append({"role": role, "parts": [{"text": entry.get("text", "")}]})
+    contents.append({"role": "user", "parts": [{"text": user_message}]})
+
+    payload = {
+        "system_instruction": {"parts": [{"text": system_prompt}]},
+        "contents": contents
+    }
+
+    try:
+        response = requests.post(GEMINI_URL, json=payload, timeout=12)
+        if response.status_code == 200:
+            data = response.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        return None
+    except requests.exceptions.RequestException:
+        return None
+    
 def get_ai_message(
     streak,
     evolution,

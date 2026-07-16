@@ -1717,8 +1717,16 @@ def mentor_chat():
     user_id = session["user"]
     progress = UserProgress.query.filter_by(user_id=user_id).first()
 
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json
+
     if not progress or progress.xp < 75:
+        if is_ajax:
+            return jsonify({
+                "response": "Your mentor awakens once you reach 75 XP. Keep training, warrior.",
+                "history": []
+            })
         return redirect(url_for("dashboard"))
+
     user_message = request.form.get("message", "").strip()[:500]
 
     progress = UserProgress.query.filter_by(user_id=user_id).first()

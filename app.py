@@ -1774,10 +1774,10 @@ def mentor_chat():
 
     is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json
 
-    if not progress or progress.xp < 75:
+    if not progress:
         if is_ajax:
             return jsonify({
-                "response": "Your mentor awakens once you reach 75 XP. Keep training, warrior.",
+                "response": "Set up your warrior profile first, then your mentor will be ready.",
                 "history": []
             })
         return redirect(url_for("dashboard"))
@@ -1852,18 +1852,48 @@ def mentor_chat():
     water_ml = water.water_ml if water else 0
     water_limit_reached = water_ml >= 3000
 
-    response = get_mentor_response(
-        user_message,
-        streak.streak_count if streak else 0,
-        get_evolution_label(progress.xp),
-        boss_available,
-        region_name,
-        xp_percent,
-        water_ml,
-        water_limit_reached,
-        goal_plan,
-        challenge_progress,
-    )
+    if check_self_harm(user_message):
+        response = get_mentor_response(
+            user_message,
+            streak.streak_count if streak else 0,
+            get_evolution_label(progress.xp),
+            boss_available,
+            region_name,
+            xp_percent,
+            water_ml,
+            water_limit_reached,
+            goal_plan,
+            challenge_progress,
+        )
+    else:
+        mentor_context = {
+            "region_name": region_name,
+            "level": progress.level,
+            "streak": streak.streak_count if streak else 0,
+            "water_ml": water_ml,
+            "goal_plan": goal_plan or "Not set",
+            "boss_available": boss_available,
+            "challenge_progress": challenge_progress,
+        }
+        gemini_reply = get_gemini_mentor_reply(
+            user_message, mentor_context, session.get("mentor_history", [])
+        )
+
+        if gemini_reply:
+            response = gemini_reply
+        else:
+            response = get_mentor_response(
+                user_message,
+                streak.streak_count if streak else 0,
+                get_evolution_label(progress.xp),
+                boss_available,
+                region_name,
+                xp_percent,
+                water_ml,
+                water_limit_reached,
+                goal_plan,
+                challenge_progress,
+            )
 
     # maintain simple conversation history in session
     history = session.get("mentor_history", [])

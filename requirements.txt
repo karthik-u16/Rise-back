@@ -8,3 +8,5 @@ psycopg2-binary==2.9.10
 pytest==8.4.2
 python-dotenv==1.0.1
 requests==2.32.3
+flask-jwt-extended==4.7.1
+firebase-admin==6.6.0

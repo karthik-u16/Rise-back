@@ -3,15 +3,18 @@ from flask import session
 from flask import Flask, render_template, redirect, url_for, request, jsonify, flash
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import date, timedelta
+from datetime import date, timedelta , datetime
 from dotenv import load_dotenv
+from flask_jwt_extended import create_access_token
+from flask_jwt_extended import jwt_required, get_jwt_identity
+
 load_dotenv()
 import os
 import random
 import requests
 
 app = Flask(__name__)
-
+               
 # Secret key: reads from environment variable in production, fallback for local dev only
 app.secret_key = os.environ.get("SECRET_KEY", "riseback_dev_key_change_in_prod")
 app.config.update(
@@ -20,6 +23,19 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") == "production",
 )
 csrf = CSRFProtect(app)
+
+from flask_jwt_extended import JWTManager
+
+app.config["JWT_SECRET_KEY"] = os.environ.get("SECRET_KEY")
+jwt = JWTManager(app)
+
+CRON_SECRET = os.environ.get("CRON_SECRET", "change-this-locally")
+
+import firebase_admin
+from firebase_admin import credentials, messaging
+
+cred = credentials.Certificate("firebase-service-account.json")
+firebase_admin.initialize_app(cred)
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
@@ -59,11 +75,16 @@ def migrate_legacy_schema():
     columns = {column["name"] for column in inspector.get_columns("water_tracker")}
     if "water_date" not in columns:
         with db.engine.begin() as connection:
-            connection.execute(text("ALTER TABLE water_tracker ADD COLUMN water_date DATE"))
             connection.execute(
-                text("UPDATE water_tracker SET water_date = :today WHERE water_date IS NULL"),
+                text("ALTER TABLE water_tracker ADD COLUMN water_date DATE")
+            )
+            connection.execute(
+                text(
+                    "UPDATE water_tracker SET water_date = :today WHERE water_date IS NULL"
+                ),
                 {"today": date.today()},
             )
+
 
 REGION_CONFIG = {
     1: {
@@ -71,14 +92,62 @@ REGION_CONFIG = {
         "weeks": 2,
         "target_progress": 8,
         "challenges": [
-            {"icon": "🧘", "name": "Breathing Reset", "focus": "Mobility", "desc": "5 minutes of calm breathwork to center your body.", "duration": 300},
-            {"icon": "🦵", "name": "Bodyweight Squat Ladder", "focus": "Legs", "desc": "Build a solid base with 3 rounds of 10 controlled squats.", "duration": 480},
-            {"icon": "💪", "name": "Incline Push-Up Flow", "focus": "Push", "desc": "Work light upper-body strength with 3 steady sets of incline push-ups.", "duration": 480},
-            {"icon": "🪢", "name": "Band Row Builder", "focus": "Pull", "desc": "Train your posture and pull strength with 15 slow rows.", "duration": 480},
-            {"icon": "🧱", "name": "Plank Hold", "focus": "Core", "desc": "Hold a strong plank for 30 seconds to stabilize your midsection.", "duration": 30},
-            {"icon": "🟠", "name": "Shoulder Tap Circuit", "focus": "Shoulders", "desc": "Build shoulder stability with 20 alternating taps.", "duration": 480},
-            {"icon": "🏃", "name": "Jog in Place", "focus": "Cardio", "desc": "Complete a real jog or sustained in-place cardio block before moving on.", "duration": 2700},
-            {"icon": "⚡", "name": "Mini Mobility Finish", "focus": "Cardio", "desc": "Finish the week with a brisk walk and light mobility flow.", "duration": 600},
+            {
+                "icon": "🧘",
+                "name": "Breathing Reset",
+                "focus": "Mobility",
+                "desc": "5 minutes of calm breathwork to center your body.",
+                "duration": 300,
+            },
+            {
+                "icon": "🦵",
+                "name": "Bodyweight Squat Ladder",
+                "focus": "Legs",
+                "desc": "Build a solid base with 3 rounds of 10 controlled squats.",
+                "duration": 480,
+            },
+            {
+                "icon": "💪",
+                "name": "Incline Push-Up Flow",
+                "focus": "Push",
+                "desc": "Work light upper-body strength with 3 steady sets of incline push-ups.",
+                "duration": 480,
+            },
+            {
+                "icon": "🪢",
+                "name": "Band Row Builder",
+                "focus": "Pull",
+                "desc": "Train your posture and pull strength with 15 slow rows.",
+                "duration": 480,
+            },
+            {
+                "icon": "🧱",
+                "name": "Plank Hold",
+                "focus": "Core",
+                "desc": "Hold a strong plank for 30 seconds to stabilize your midsection.",
+                "duration": 30,
+            },
+            {
+                "icon": "🟠",
+                "name": "Shoulder Tap Circuit",
+                "focus": "Shoulders",
+                "desc": "Build shoulder stability with 20 alternating taps.",
+                "duration": 480,
+            },
+            {
+                "icon": "🏃",
+                "name": "Jog in Place",
+                "focus": "Cardio",
+                "desc": "Complete a real jog or sustained in-place cardio block before moving on.",
+                "duration": 2700,
+            },
+            {
+                "icon": "⚡",
+                "name": "Mini Mobility Finish",
+                "focus": "Cardio",
+                "desc": "Finish the week with a brisk walk and light mobility flow.",
+                "duration": 600,
+            },
         ],
     },
     2: {
@@ -86,18 +155,90 @@ REGION_CONFIG = {
         "weeks": 4,
         "target_progress": 12,
         "challenges": [
-            {"icon": "💥", "name": "Push-Up Circuit", "focus": "Push", "desc": "Complete 3 rounds of 10 clean push-ups with good form.", "duration": 480},
-            {"icon": "🪢", "name": "Bent-Over Rows", "focus": "Pull", "desc": "Drive your back and pull strength through 20 reps.", "duration": 480},
-            {"icon": "🦵", "name": "Walking Lunges", "focus": "Legs", "desc": "Walk strong through 20 lunges to fire your lower body.", "duration": 480},
-            {"icon": "🟠", "name": "Pike Shoulder Press", "focus": "Shoulders", "desc": "Hold the pike position and press for 12 controlled reps.", "duration": 480},
-            {"icon": "🔥", "name": "Jump Rope Burst", "focus": "Cardio", "desc": "Push your pace for 2 minutes of jump rope movement.", "duration": 120},
-            {"icon": "💪", "name": "Decline Push-Up Prep", "focus": "Push", "desc": "Use a sturdy surface and train the lower chest with 8 to 12 reps.", "duration": 480},
-            {"icon": "🧗", "name": "Inverted Row Drill", "focus": "Pull", "desc": "Build pulling strength with 12 controlled bodyweight rows.", "duration": 480},
-            {"icon": "🚀", "name": "Reverse Lunge Set", "focus": "Legs", "desc": "Complete 3 rounds of 10 reverse lunges with control.", "duration": 480},
-            {"icon": "🏋️", "name": "Wall Shoulder Press", "focus": "Shoulders", "desc": "Press the bodyweight overhead with slow tempo reps.", "duration": 480},
-            {"icon": "⚡", "name": "Burpee Intervals", "focus": "Cardio", "desc": "Finish strong with 8 burpees every minute for 4 minutes.", "duration": 240},
-            {"icon": "🧘", "name": "Recovery Flow", "focus": "Mobility", "desc": "Recover with mobility and breathing after a hard training block.", "duration": 360},
-            {"icon": "🏃‍♂️", "name": "Tempo Run", "focus": "Cardio", "desc": "Run for 15 minutes at a strong pace without rushing.", "duration": 900},
+            {
+                "icon": "💥",
+                "name": "Push-Up Circuit",
+                "focus": "Push",
+                "desc": "Complete 3 rounds of 10 clean push-ups with good form.",
+                "duration": 480,
+            },
+            {
+                "icon": "🪢",
+                "name": "Bent-Over Rows",
+                "focus": "Pull",
+                "desc": "Drive your back and pull strength through 20 reps.",
+                "duration": 480,
+            },
+            {
+                "icon": "🦵",
+                "name": "Walking Lunges",
+                "focus": "Legs",
+                "desc": "Walk strong through 20 lunges to fire your lower body.",
+                "duration": 480,
+            },
+            {
+                "icon": "🟠",
+                "name": "Pike Shoulder Press",
+                "focus": "Shoulders",
+                "desc": "Hold the pike position and press for 12 controlled reps.",
+                "duration": 480,
+            },
+            {
+                "icon": "🔥",
+                "name": "Jump Rope Burst",
+                "focus": "Cardio",
+                "desc": "Push your pace for 2 minutes of jump rope movement.",
+                "duration": 120,
+            },
+            {
+                "icon": "💪",
+                "name": "Decline Push-Up Prep",
+                "focus": "Push",
+                "desc": "Use a sturdy surface and train the lower chest with 8 to 12 reps.",
+                "duration": 480,
+            },
+            {
+                "icon": "🧗",
+                "name": "Inverted Row Drill",
+                "focus": "Pull",
+                "desc": "Build pulling strength with 12 controlled bodyweight rows.",
+                "duration": 480,
+            },
+            {
+                "icon": "🚀",
+                "name": "Reverse Lunge Set",
+                "focus": "Legs",
+                "desc": "Complete 3 rounds of 10 reverse lunges with control.",
+                "duration": 480,
+            },
+            {
+                "icon": "🏋️",
+                "name": "Wall Shoulder Press",
+                "focus": "Shoulders",
+                "desc": "Press the bodyweight overhead with slow tempo reps.",
+                "duration": 480,
+            },
+            {
+                "icon": "⚡",
+                "name": "Burpee Intervals",
+                "focus": "Cardio",
+                "desc": "Finish strong with 8 burpees every minute for 4 minutes.",
+                "duration": 240,
+            },
+            {
+                "icon": "🧘",
+                "name": "Recovery Flow",
+                "focus": "Mobility",
+                "desc": "Recover with mobility and breathing after a hard training block.",
+                "duration": 360,
+            },
+            {
+                "icon": "🏃‍♂️",
+                "name": "Tempo Run",
+                "focus": "Cardio",
+                "desc": "Run for 15 minutes at a strong pace without rushing.",
+                "duration": 900,
+            },
         ],
     },
     3: {
@@ -105,22 +246,118 @@ REGION_CONFIG = {
         "weeks": 8,
         "target_progress": 16,
         "challenges": [
-            {"icon": "🔻", "name": "Diamond Push-Ups", "focus": "Push", "desc": "Tighten your form with 20 diamond-style push-ups.", "duration": 480},
-            {"icon": "🧗", "name": "Chin-Ups", "focus": "Pull", "desc": "Strengthen your back with 10 challenging chin-ups.", "duration": 480},
-            {"icon": "🎯", "name": "Bulgarian Split Squats", "focus": "Legs", "desc": "Perform 16 split squats for focused leg power.", "duration": 480},
-            {"icon": "🟡", "name": "Pike Shoulder Press", "focus": "Shoulders", "desc": "Hold the pike position and press for 12 reps.", "duration": 480},
-            {"icon": "🏃‍♂️", "name": "400m Run", "focus": "Cardio", "desc": "Complete a fast 400m run or equivalent sprint set.", "duration": 600},
-            {"icon": "💥", "name": "Close-Grip Push-Up Ladder", "focus": "Push", "desc": "Move through 3 rounds of close-grip push-ups with control.", "duration": 480},
-            {"icon": "🪢", "name": "Chest-Supported Row", "focus": "Pull", "desc": "Train back strength with 12 slow rows and full range.", "duration": 480},
-            {"icon": "🦵", "name": "Step-Up Strength", "focus": "Legs", "desc": "Drive through 12 step-ups per leg for balance and power.", "duration": 480},
-            {"icon": "🤸", "name": "Handstand Hold", "focus": "Shoulders", "desc": "Hold the handstand for 20 seconds to test balance.", "duration": 20},
-            {"icon": "⚡", "name": "Sprint Intervals", "focus": "Cardio", "desc": "Complete alternating sprint and recovery sets.", "duration": 600},
-            {"icon": "🧘", "name": "Flow Reset", "focus": "Mobility", "desc": "Use this reset block to move better and stay fresh.", "duration": 360},
-            {"icon": "💨", "name": "EMOM Burpees", "focus": "Cardio", "desc": "Push your endurance with 10 burpees each minute.", "duration": 600},
-            {"icon": "🔺", "name": "Wide Push-Up Set", "focus": "Push", "desc": "Train the chest and shoulders with wide push-ups.", "duration": 480},
-            {"icon": "🪝", "name": "Neutral-Grip Pull", "focus": "Pull", "desc": "Hold your back tight and pull with control.", "duration": 480},
-            {"icon": "🏋️", "name": "Goblet Squat Press", "focus": "Legs", "desc": "Combine squatting and pressing for power and control.", "duration": 480},
-            {"icon": "🧱", "name": "Side Plank Hold", "focus": "Core", "desc": "Hold each side for 30 seconds and build trunk stiffness.", "duration": 30},
+            {
+                "icon": "🔻",
+                "name": "Diamond Push-Ups",
+                "focus": "Push",
+                "desc": "Tighten your form with 20 diamond-style push-ups.",
+                "duration": 480,
+            },
+            {
+                "icon": "🧗",
+                "name": "Chin-Ups",
+                "focus": "Pull",
+                "desc": "Strengthen your back with 10 challenging chin-ups.",
+                "duration": 480,
+            },
+            {
+                "icon": "🎯",
+                "name": "Bulgarian Split Squats",
+                "focus": "Legs",
+                "desc": "Perform 16 split squats for focused leg power.",
+                "duration": 480,
+            },
+            {
+                "icon": "🟡",
+                "name": "Pike Shoulder Press",
+                "focus": "Shoulders",
+                "desc": "Hold the pike position and press for 12 reps.",
+                "duration": 480,
+            },
+            {
+                "icon": "🏃‍♂️",
+                "name": "400m Run",
+                "focus": "Cardio",
+                "desc": "Complete a fast 400m run or equivalent sprint set.",
+                "duration": 600,
+            },
+            {
+                "icon": "💥",
+                "name": "Close-Grip Push-Up Ladder",
+                "focus": "Push",
+                "desc": "Move through 3 rounds of close-grip push-ups with control.",
+                "duration": 480,
+            },
+            {
+                "icon": "🪢",
+                "name": "Chest-Supported Row",
+                "focus": "Pull",
+                "desc": "Train back strength with 12 slow rows and full range.",
+                "duration": 480,
+            },
+            {
+                "icon": "🦵",
+                "name": "Step-Up Strength",
+                "focus": "Legs",
+                "desc": "Drive through 12 step-ups per leg for balance and power.",
+                "duration": 480,
+            },
+            {
+                "icon": "🤸",
+                "name": "Handstand Hold",
+                "focus": "Shoulders",
+                "desc": "Hold the handstand for 20 seconds to test balance.",
+                "duration": 20,
+            },
+            {
+                "icon": "⚡",
+                "name": "Sprint Intervals",
+                "focus": "Cardio",
+                "desc": "Complete alternating sprint and recovery sets.",
+                "duration": 600,
+            },
+            {
+                "icon": "🧘",
+                "name": "Flow Reset",
+                "focus": "Mobility",
+                "desc": "Use this reset block to move better and stay fresh.",
+                "duration": 360,
+            },
+            {
+                "icon": "💨",
+                "name": "EMOM Burpees",
+                "focus": "Cardio",
+                "desc": "Push your endurance with 10 burpees each minute.",
+                "duration": 600,
+            },
+            {
+                "icon": "🔺",
+                "name": "Wide Push-Up Set",
+                "focus": "Push",
+                "desc": "Train the chest and shoulders with wide push-ups.",
+                "duration": 480,
+            },
+            {
+                "icon": "🪝",
+                "name": "Neutral-Grip Pull",
+                "focus": "Pull",
+                "desc": "Hold your back tight and pull with control.",
+                "duration": 480,
+            },
+            {
+                "icon": "🏋️",
+                "name": "Goblet Squat Press",
+                "focus": "Legs",
+                "desc": "Combine squatting and pressing for power and control.",
+                "duration": 480,
+            },
+            {
+                "icon": "🧱",
+                "name": "Side Plank Hold",
+                "focus": "Core",
+                "desc": "Hold each side for 30 seconds and build trunk stiffness.",
+                "duration": 30,
+            },
         ],
     },
     4: {
@@ -128,26 +365,146 @@ REGION_CONFIG = {
         "weeks": 16,
         "target_progress": 20,
         "challenges": [
-            {"icon": "⬇️", "name": "Decline Push-Ups", "focus": "Push", "desc": "Challenge your upper chest with 20 decline push-ups.", "duration": 480},
-            {"icon": "↕️", "name": "Inverted Rows", "focus": "Pull", "desc": "Build pulling strength with 15 bodyweight rows.", "duration": 480},
-            {"icon": "🚀", "name": "Squat Jumps", "focus": "Legs", "desc": "Explode through 15 squat jumps for power.", "duration": 480},
-            {"icon": "🏋️", "name": "Shoulder Presses", "focus": "Shoulders", "desc": "Press through 20 reps with controlled shoulder strength.", "duration": 480},
-            {"icon": "💨", "name": "EMOM Burpees", "focus": "Cardio", "desc": "Push your endurance with 10 burpees each minute.", "duration": 600},
-            {"icon": "🔥", "name": "One-Arm Push-Up Prep", "focus": "Push", "desc": "Build elite pushing strength with progression work.", "duration": 480},
-            {"icon": "💪", "name": "Weighted Pull-Ups", "focus": "Pull", "desc": "Add resistance to 12 strong pull-ups.", "duration": 480},
-            {"icon": "🦵", "name": "Pistol Squats", "focus": "Legs", "desc": "Master single-leg control with 10 pistol squat reps.", "duration": 480},
-            {"icon": "🤸", "name": "Handstand Hold", "focus": "Shoulders", "desc": "Hold the handstand for 20 seconds to test balance.", "duration": 20},
-            {"icon": "⚡", "name": "Sprint Intervals", "focus": "Cardio", "desc": "Complete alternating sprint and recovery sets.", "duration": 600},
-            {"icon": "🥋", "name": "Tempo Push-Up Ladder", "focus": "Push", "desc": "Push slowly and deliberately to sharpen form and strength.", "duration": 480},
-            {"icon": "🪝", "name": "Weighted Row Set", "focus": "Pull", "desc": "Use resistance and drive the elbows back under tension.", "duration": 480},
-            {"icon": "🦿", "name": "Single-Leg Romanian Deadlift", "focus": "Legs", "desc": "Train balance and posterior chain with clean single-leg reps.", "duration": 480},
-            {"icon": "🛡", "name": "Overhead Stability Hold", "focus": "Shoulders", "desc": "Hold a stable overhead position and build control.", "duration": 480},
-            {"icon": "🏃", "name": "Hill Sprints", "focus": "Cardio", "desc": "Use short uphill sprints to build power and durability.", "duration": 600},
-            {"icon": "🧘", "name": "Deep Recovery Reset", "focus": "Mobility", "desc": "Use a focused mobility block to stay healthy through hard training.", "duration": 360},
-            {"icon": "💥", "name": "Hybrid Push Circuit", "focus": "Push", "desc": "Combine push-ups and dips for a demanding upper-body finisher.", "duration": 480},
-            {"icon": "🪢", "name": "Pull-Up Progression", "focus": "Pull", "desc": "Use assisted work and strengthen the full pull motion.", "duration": 480},
-            {"icon": "🦵", "name": "Jump Squat Finish", "focus": "Legs", "desc": "Finish the week with explosive squat jumps and good form.", "duration": 480},
-            {"icon": "⚔", "name": "Warrior Cardio Circuit", "focus": "Cardio", "desc": "Finish with a serious conditioning circuit that tests your grit.", "duration": 600},
+            {
+                "icon": "⬇️",
+                "name": "Decline Push-Ups",
+                "focus": "Push",
+                "desc": "Challenge your upper chest with 20 decline push-ups.",
+                "duration": 480,
+            },
+            {
+                "icon": "↕️",
+                "name": "Inverted Rows",
+                "focus": "Pull",
+                "desc": "Build pulling strength with 15 bodyweight rows.",
+                "duration": 480,
+            },
+            {
+                "icon": "🚀",
+                "name": "Squat Jumps",
+                "focus": "Legs",
+                "desc": "Explode through 15 squat jumps for power.",
+                "duration": 480,
+            },
+            {
+                "icon": "🏋️",
+                "name": "Shoulder Presses",
+                "focus": "Shoulders",
+                "desc": "Press through 20 reps with controlled shoulder strength.",
+                "duration": 480,
+            },
+            {
+                "icon": "💨",
+                "name": "EMOM Burpees",
+                "focus": "Cardio",
+                "desc": "Push your endurance with 10 burpees each minute.",
+                "duration": 600,
+            },
+            {
+                "icon": "🔥",
+                "name": "One-Arm Push-Up Prep",
+                "focus": "Push",
+                "desc": "Build elite pushing strength with progression work.",
+                "duration": 480,
+            },
+            {
+                "icon": "💪",
+                "name": "Weighted Pull-Ups",
+                "focus": "Pull",
+                "desc": "Add resistance to 12 strong pull-ups.",
+                "duration": 480,
+            },
+            {
+                "icon": "🦵",
+                "name": "Pistol Squats",
+                "focus": "Legs",
+                "desc": "Master single-leg control with 10 pistol squat reps.",
+                "duration": 480,
+            },
+            {
+                "icon": "🤸",
+                "name": "Handstand Hold",
+                "focus": "Shoulders",
+                "desc": "Hold the handstand for 20 seconds to test balance.",
+                "duration": 20,
+            },
+            {
+                "icon": "⚡",
+                "name": "Sprint Intervals",
+                "focus": "Cardio",
+                "desc": "Complete alternating sprint and recovery sets.",
+                "duration": 600,
+            },
+            {
+                "icon": "🥋",
+                "name": "Tempo Push-Up Ladder",
+                "focus": "Push",
+                "desc": "Push slowly and deliberately to sharpen form and strength.",
+                "duration": 480,
+            },
+            {
+                "icon": "🪝",
+                "name": "Weighted Row Set",
+                "focus": "Pull",
+                "desc": "Use resistance and drive the elbows back under tension.",
+                "duration": 480,
+            },
+            {
+                "icon": "🦿",
+                "name": "Single-Leg Romanian Deadlift",
+                "focus": "Legs",
+                "desc": "Train balance and posterior chain with clean single-leg reps.",
+                "duration": 480,
+            },
+            {
+                "icon": "🛡",
+                "name": "Overhead Stability Hold",
+                "focus": "Shoulders",
+                "desc": "Hold a stable overhead position and build control.",
+                "duration": 480,
+            },
+            {
+                "icon": "🏃",
+                "name": "Hill Sprints",
+                "focus": "Cardio",
+                "desc": "Use short uphill sprints to build power and durability.",
+                "duration": 600,
+            },
+            {
+                "icon": "🧘",
+                "name": "Deep Recovery Reset",
+                "focus": "Mobility",
+                "desc": "Use a focused mobility block to stay healthy through hard training.",
+                "duration": 360,
+            },
+            {
+                "icon": "💥",
+                "name": "Hybrid Push Circuit",
+                "focus": "Push",
+                "desc": "Combine push-ups and dips for a demanding upper-body finisher.",
+                "duration": 480,
+            },
+            {
+                "icon": "🪢",
+                "name": "Pull-Up Progression",
+                "focus": "Pull",
+                "desc": "Use assisted work and strengthen the full pull motion.",
+                "duration": 480,
+            },
+            {
+                "icon": "🦵",
+                "name": "Jump Squat Finish",
+                "focus": "Legs",
+                "desc": "Finish the week with explosive squat jumps and good form.",
+                "duration": 480,
+            },
+            {
+                "icon": "⚔",
+                "name": "Warrior Cardio Circuit",
+                "focus": "Cardio",
+                "desc": "Finish with a serious conditioning circuit that tests your grit.",
+                "duration": 600,
+            },
         ],
     },
     5: {
@@ -155,30 +512,174 @@ REGION_CONFIG = {
         "weeks": 32,
         "target_progress": 24,
         "challenges": [
-            {"icon": "👑", "name": "One-Arm Push-Up Prep", "focus": "Push", "desc": "Build elite pushing strength with progression work.", "duration": 480},
-            {"icon": "🏆", "name": "Weighted Pull-Ups", "focus": "Pull", "desc": "Add resistance to 12 strong pull-ups.", "duration": 480},
-            {"icon": "🦿", "name": "Pistol Squats", "focus": "Legs", "desc": "Master single-leg control with 10 pistol squat reps.", "duration": 480},
-            {"icon": "🤸", "name": "Handstand Hold", "focus": "Shoulders", "desc": "Hold the handstand for 20 seconds to test balance.", "duration": 20},
-            {"icon": "⚡", "name": "Sprint Intervals", "focus": "Cardio", "desc": "Complete alternating sprint and recovery sets.", "duration": 600},
-            {"icon": "🔥", "name": "Explosive Push-Up Ladder", "focus": "Push", "desc": "Move through strong explosive push-up reps with clean form.", "duration": 480},
-            {"icon": "🪢", "name": "Weighted Row Mastery", "focus": "Pull", "desc": "Drive the chest up and pull through a full range of motion.", "duration": 480},
-            {"icon": "🦵", "name": "Split Squat Mastery", "focus": "Legs", "desc": "Develop controlled power in single-leg squatting.", "duration": 480},
-            {"icon": "🛡", "name": "Overhead Press Endurance", "focus": "Shoulders", "desc": "Hold a strong overhead position through a demanding set.", "duration": 480},
-            {"icon": "🏃", "name": "Tempo Hill Run", "focus": "Cardio", "desc": "Train your engine with a controlled hill run session.", "duration": 600},
-            {"icon": "🧘", "name": "Longevity Mobility Flow", "focus": "Mobility", "desc": "Use this flow to maintain movement quality and durability.", "duration": 360},
-            {"icon": "💥", "name": "Advanced Push Circuit", "focus": "Push", "desc": "Stack challenging push variations into a serious upper-body block.", "duration": 480},
-            {"icon": "🪝", "name": "Pull-Up Strength Test", "focus": "Pull", "desc": "Push your pull-up volume and strength with purpose.", "duration": 480},
-            {"icon": "🦿", "name": "Single-Leg Romanian Deadlift", "focus": "Legs", "desc": "Train balance and posterior chain with clean single-leg reps.", "duration": 480},
-            {"icon": "♻️", "name": "Shoulder Stability Circuit", "focus": "Shoulders", "desc": "Build resilience through deliberate shoulder-strength work.", "duration": 480},
-            {"icon": "⚔", "name": "Warrior Conditioning", "focus": "Cardio", "desc": "Finish the week with a stamina challenge that tests grit.", "duration": 600},
-            {"icon": "🔥", "name": "Elite Push Finisher", "focus": "Push", "desc": "Use a tough push finisher to close the week strong.", "duration": 480},
-            {"icon": "🪢", "name": "Pull Strength Builder", "focus": "Pull", "desc": "Stack rows and pull-ups into a back-focused session.", "duration": 480},
-            {"icon": "🦵", "name": "Power Squat Circuit", "focus": "Legs", "desc": "Combine squat strength with controlled explosive reps.", "duration": 480},
-            {"icon": "🏃", "name": "Endurance Builder", "focus": "Cardio", "desc": "Train your breath, pacing, and durability for the long haul.", "duration": 600},
-            {"icon": "🧘", "name": "Recovery Reset", "focus": "Mobility", "desc": "Use this block to recover and keep your body moving well.", "duration": 360},
-            {"icon": "⚔", "name": "Final Ascension Circuit", "focus": "Cardio", "desc": "Test your endurance and discipline one more time.", "duration": 600},
-            {"icon": "💪", "name": "Legendary Push Day", "focus": "Push", "desc": "Finish the long cycle with a deliberate push session.", "duration": 480},
-            {"icon": "🪢", "name": "Legendary Pull Day", "focus": "Pull", "desc": "Push your back strength to the next level.", "duration": 480},
+            {
+                "icon": "👑",
+                "name": "One-Arm Push-Up Prep",
+                "focus": "Push",
+                "desc": "Build elite pushing strength with progression work.",
+                "duration": 480,
+            },
+            {
+                "icon": "🏆",
+                "name": "Weighted Pull-Ups",
+                "focus": "Pull",
+                "desc": "Add resistance to 12 strong pull-ups.",
+                "duration": 480,
+            },
+            {
+                "icon": "🦿",
+                "name": "Pistol Squats",
+                "focus": "Legs",
+                "desc": "Master single-leg control with 10 pistol squat reps.",
+                "duration": 480,
+            },
+            {
+                "icon": "🤸",
+                "name": "Handstand Hold",
+                "focus": "Shoulders",
+                "desc": "Hold the handstand for 20 seconds to test balance.",
+                "duration": 20,
+            },
+            {
+                "icon": "⚡",
+                "name": "Sprint Intervals",
+                "focus": "Cardio",
+                "desc": "Complete alternating sprint and recovery sets.",
+                "duration": 600,
+            },
+            {
+                "icon": "🔥",
+                "name": "Explosive Push-Up Ladder",
+                "focus": "Push",
+                "desc": "Move through strong explosive push-up reps with clean form.",
+                "duration": 480,
+            },
+            {
+                "icon": "🪢",
+                "name": "Weighted Row Mastery",
+                "focus": "Pull",
+                "desc": "Drive the chest up and pull through a full range of motion.",
+                "duration": 480,
+            },
+            {
+                "icon": "🦵",
+                "name": "Split Squat Mastery",
+                "focus": "Legs",
+                "desc": "Develop controlled power in single-leg squatting.",
+                "duration": 480,
+            },
+            {
+                "icon": "🛡",
+                "name": "Overhead Press Endurance",
+                "focus": "Shoulders",
+                "desc": "Hold a strong overhead position through a demanding set.",
+                "duration": 480,
+            },
+            {
+                "icon": "🏃",
+                "name": "Tempo Hill Run",
+                "focus": "Cardio",
+                "desc": "Train your engine with a controlled hill run session.",
+                "duration": 600,
+            },
+            {
+                "icon": "🧘",
+                "name": "Longevity Mobility Flow",
+                "focus": "Mobility",
+                "desc": "Use this flow to maintain movement quality and durability.",
+                "duration": 360,
+            },
+            {
+                "icon": "💥",
+                "name": "Advanced Push Circuit",
+                "focus": "Push",
+                "desc": "Stack challenging push variations into a serious upper-body block.",
+                "duration": 480,
+            },
+            {
+                "icon": "🪝",
+                "name": "Pull-Up Strength Test",
+                "focus": "Pull",
+                "desc": "Push your pull-up volume and strength with purpose.",
+                "duration": 480,
+            },
+            {
+                "icon": "🦿",
+                "name": "Single-Leg Romanian Deadlift",
+                "focus": "Legs",
+                "desc": "Train balance and posterior chain with clean single-leg reps.",
+                "duration": 480,
+            },
+            {
+                "icon": "♻️",
+                "name": "Shoulder Stability Circuit",
+                "focus": "Shoulders",
+                "desc": "Build resilience through deliberate shoulder-strength work.",
+                "duration": 480,
+            },
+            {
+                "icon": "⚔",
+                "name": "Warrior Conditioning",
+                "focus": "Cardio",
+                "desc": "Finish the week with a stamina challenge that tests grit.",
+                "duration": 600,
+            },
+            {
+                "icon": "🔥",
+                "name": "Elite Push Finisher",
+                "focus": "Push",
+                "desc": "Use a tough push finisher to close the week strong.",
+                "duration": 480,
+            },
+            {
+                "icon": "🪢",
+                "name": "Pull Strength Builder",
+                "focus": "Pull",
+                "desc": "Stack rows and pull-ups into a back-focused session.",
+                "duration": 480,
+            },
+            {
+                "icon": "🦵",
+                "name": "Power Squat Circuit",
+                "focus": "Legs",
+                "desc": "Combine squat strength with controlled explosive reps.",
+                "duration": 480,
+            },
+            {
+                "icon": "🏃",
+                "name": "Endurance Builder",
+                "focus": "Cardio",
+                "desc": "Train your breath, pacing, and durability for the long haul.",
+                "duration": 600,
+            },
+            {
+                "icon": "🧘",
+                "name": "Recovery Reset",
+                "focus": "Mobility",
+                "desc": "Use this block to recover and keep your body moving well.",
+                "duration": 360,
+            },
+            {
+                "icon": "⚔",
+                "name": "Final Ascension Circuit",
+                "focus": "Cardio",
+                "desc": "Test your endurance and discipline one more time.",
+                "duration": 600,
+            },
+            {
+                "icon": "💪",
+                "name": "Legendary Push Day",
+                "focus": "Push",
+                "desc": "Finish the long cycle with a deliberate push session.",
+                "duration": 480,
+            },
+            {
+                "icon": "🪢",
+                "name": "Legendary Pull Day",
+                "focus": "Pull",
+                "desc": "Push your back strength to the next level.",
+                "duration": 480,
+            },
         ],
     },
 }
@@ -211,6 +712,7 @@ def award_region_progress(progress, amount=1):
         progress.level = min(5, progress.level + 1)
 
     return progress
+
 
 REGIONS = {
     1: {"name": "🏕 Foundation Camp", "next": "⚔ Combat Valley"},
@@ -358,7 +860,12 @@ CATEGORY_CALORIES_PER_MIN = {
     "General": 6,
 }
 
-
+class DeviceToken(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    fcm_token = db.Column(db.String(300), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
 class User(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
@@ -419,7 +926,9 @@ class WorkoutLog(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
 
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id"), nullable=False, index=True
+    )
 
     workout_date = db.Column(db.Date, nullable=False)
 
@@ -446,7 +955,9 @@ class WaterTracker(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
 
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("user.id"), nullable=False, index=True
+    )
 
     water_ml = db.Column(db.Integer, default=0)
 
@@ -512,24 +1023,7 @@ class ShadowBoss(db.Model):
     user_id = db.Column(db.Integer)
 
     defeated = db.Column(db.Boolean, default=False)
-
-
-def get_badges(xp):
-
-    badges = [
-        {"name": "MORTAL", "xp": 0},
-        {"name": "WARRIOR", "xp": 15},
-        {"name": "DEMIGOD", "xp": 30},
-        {"name": "GOD", "xp": 50},
-        {"name": "CELESTIAL", "xp": 75},
-    ]
-
-    for badge in badges:
-        badge["unlocked"] = xp >= badge["xp"]
-
-    return badges
-
-
+    
 class Achievement(db.Model):
 
     __table_args__ = (db.UniqueConstraint("user_id", "achievement_name"),)
@@ -539,15 +1033,53 @@ class Achievement(db.Model):
     user_id = db.Column(db.Integer, nullable=False)
 
     achievement_name = db.Column(db.String(100), nullable=False)
+    
+def send_push_to_user(user_id, title, body):
+    tokens = DeviceToken.query.filter_by(user_id=user_id).all()
+    results = []
+
+    for device in tokens:
+        message = messaging.Message(
+            notification=messaging.Notification(title=title, body=body),
+            token=device.fcm_token,
+        )
+        try:
+            response = messaging.send(message)
+            results.append({"token": device.fcm_token[:20] + "...", "success": True, "id": response})
+        except Exception as e:
+            results.append({"token": device.fcm_token[:20] + "...", "success": False, "error": str(e)})
+
+    return results
+
+
+def get_badges(level):
+
+    badges = [
+        {"name": "MORTAL", "level": 1},
+        {"name": "WARRIOR", "level": 2},
+        {"name": "DEMIGOD", "level": 3},
+        {"name": "GOD", "level": 4},
+        {"name": "CELESTIAL", "level": 5},
+    ]
+
+    for badge in badges:
+        badge["unlocked"] = level >= badge["level"]
+
+    return badges
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_MODEL = "gemini-3.1-flash-lite"
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
 
 SELF_HARM_PHRASES = [
-    "hurt myself", "self harm", "suicide", "end my life",
-    "kill myself", "want to die"
+    "hurt myself",
+    "self harm",
+    "suicide",
+    "end my life",
+    "kill myself",
+    "want to die",
 ]
+
 
 def check_self_harm(user_message):
     lowered = user_message.lower()
@@ -555,20 +1087,32 @@ def check_self_harm(user_message):
 
 
 def build_mentor_system_prompt(context):
-    return f"""You are a fitness mentor inside a gamified fitness app called Rise Back.
-The app has a warrior/ascension theme — speak with intensity, encouragement, and directness, like a mentor training a warrior.
+    weight_line = f"{context['weight']}kg" if context['weight'] else "not set"
+    target_line = f"{context['target_weight']}kg" if context['target_weight'] else "not set"
+    calorie_line = f"{context['calorie_target']} kcal/day maintenance" if context['calorie_target'] else "not calculated yet (profile incomplete)"
 
-Current player state:
+    return f"""You are a fitness mentor inside a gamified fitness app called Rise Back.
+The app has a warrior/ascension theme — your personality is intense, direct, and encouraging, like a mentor training a warrior.
+
+Current player state (this is real, accurate data — use exact numbers when asked, never guess or make up a number):
 - Region: {context['region_name']} (Level {context['level']})
+- XP: {context['xp']} / 30 (per-region cap)
 - Streak: {context['streak']} days
 - Water today: {context['water_ml']}ml / {MAX_DAILY_WATER_ML}ml
+- Current weight: {weight_line}
+- Target weight: {target_line}
+- Estimated maintenance calories: {calorie_line}
 - Fitness plan: {context['goal_plan']}
 - Boss available: {context['boss_available']}
 - Today's daily missions completed: {context['challenge_progress']}%
 
-You can answer ANY question the player asks — nutrition, exercise form, general motivation, or anything else on their mind. Don't refuse or deflect off-topic questions; you're a real coach, not a narrow game-hint bot.
-Keep replies short: 2-4 sentences, mobile-friendly.
-Never give specific medical diagnoses, injury treatment, or extreme diet/dosage advice — for those, tell them to see a doctor or professional.
+RULES, IN ORDER OF PRIORITY:
+1. Always answer the player's actual question directly and accurately first, using the real numbers above — never invent or estimate a stat that's given here.
+2. If a stat is "not set" or "not calculated yet", tell them that honestly and suggest completing their profile — don't make up a placeholder number.
+3. Only after directly answering, add warrior-themed encouragement or tie it back to training — persona is a garnish, not a replacement for the answer.
+4. You can discuss ANY topic they bring up. Never refuse or deflect a genuine question.
+5. Keep the whole reply short: 2-4 sentences, mobile-friendly.
+6. Never give specific medical diagnoses, injury treatment, or extreme diet/dosage advice — for those, tell them to see a doctor or professional.
 """
 
 
@@ -583,7 +1127,7 @@ def get_gemini_mentor_reply(user_message, context, history):
 
     payload = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
-        "contents": contents
+        "contents": contents,
     }
 
     try:
@@ -594,7 +1138,8 @@ def get_gemini_mentor_reply(user_message, context, history):
         return None
     except requests.exceptions.RequestException:
         return None
-    
+
+
 def get_ai_message(
     streak,
     evolution,
@@ -639,6 +1184,23 @@ def get_ai_message(
 
     return "Every strong body starts as an unfinished one. Keep building."
 
+def get_users_needing_reminder():
+    today = date.today()
+    all_users = User.query.all()
+    needs_reminder = []
+
+    for user in all_users:
+        completed_count = DailyMission.query.filter_by(
+            user_id=user.id,
+            mission_date=today,
+            completed=True
+        ).count()
+
+        if completed_count < 3:
+            needs_reminder.append(user.id)
+
+    return needs_reminder
+
 def get_activity_factor(activity_level):
     return {
         "Sedentary": 1.2,
@@ -650,7 +1212,9 @@ def get_activity_factor(activity_level):
 
 
 def get_calorie_mission(profile):
-    if not profile or not all((profile.gender, profile.weight, profile.height, profile.age)):
+    if not profile or not all(
+        (profile.gender, profile.weight, profile.height, profile.age)
+    ):
         return None
 
     bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age
@@ -665,14 +1229,14 @@ def get_calorie_mission(profile):
     return f"Stay near {maintenance} kcal"
 
 
-def get_evolution_label(xp):
-    if xp >= 75:
+def get_evolution_label(level):
+    if level >= 5:
         return "✨ CELESTIAL"
-    if xp >= 50:
+    if level >= 4:
         return "👑 GOD"
-    if xp >= 30:
+    if level >= 3:
         return "🔥 DEMIGOD"
-    if xp >= 15:
+    if level >= 2:
         return "⚔ WARRIOR"
     return "⚫ MORTAL"
 
@@ -691,7 +1255,10 @@ def get_mentor_response(
 ):
     text = user_message.lower().strip()
 
-    if any(phrase in text for phrase in ["hurt myself", "self harm", "suicide", "end my life"]):
+    if any(
+        phrase in text
+        for phrase in ["hurt myself", "self harm", "suicide", "end my life"]
+    ):
         return (
             "I'm really sorry you're carrying this. Please pause the workout and contact local "
             "emergency services or a trusted person who can stay with you now. You deserve human support."
@@ -759,23 +1326,28 @@ def get_mentor_response(
             "Nutrition is the silent partner to every workout."
         )
 
-    if any(word in text for word in ["boss", "battle", "challenge", "guardian", "region"]):
+    if any(
+        word in text for word in ["boss", "battle", "challenge", "guardian", "region"]
+    ):
         if boss_available:
             return (
                 f"⚔ Your region is cleared and {region_name}'s boss is waiting. "
                 "Step into the arena and claim your reward."
             )
-        return (
-            f"👊 Focus on today's mission first. The boss becomes real when the path is complete."
-        )
+        return f"👊 Focus on today's mission first. The boss becomes real when the path is complete."
 
-    if any(word in text for word in ["progress", "xp", "streak", "weight", "goal", "lost", "gain"]):
+    if any(
+        word in text
+        for word in ["progress", "xp", "streak", "weight", "goal", "lost", "gain"]
+    ):
         return (
             "📈 Progress is a collection of small wins. "
             "Keep stacking them with consistency and the results will follow."
         )
 
-    if any(word in text for word in ["tired", "weak", "give up", "can't", "cant", "fail"]):
+    if any(
+        word in text for word in ["tired", "weak", "give up", "can't", "cant", "fail"]
+    ):
         return (
             "🛡 Every strong body has a tired day. Rest if you need it, then return with focus. "
             "You are stronger than the urge to quit."
@@ -863,6 +1435,90 @@ def login():
 
     return render_template("login.html")
 
+@app.route("/api/register-device", methods=["POST"])
+@jwt_required()
+@csrf.exempt
+def register_device():
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+    token = data.get("fcm_token")
+
+    if not token:
+        return jsonify({"error": "Missing fcm_token"}), 400
+
+    existing = DeviceToken.query.filter_by(fcm_token=token).first()
+    if existing:
+        existing.user_id = user_id
+    else:
+        db.session.add(DeviceToken(user_id=user_id, fcm_token=token))
+
+    db.session.commit()
+    return jsonify({"success": True})
+
+@app.route("/api/test-push", methods=["POST"])
+@jwt_required()
+@csrf.exempt
+def test_push():
+    user_id = int(get_jwt_identity())
+    results = send_push_to_user(user_id, "Rise Back", "This is a real test push from your Flask backend!")
+    return jsonify({"results": results})
+
+@app.route("/api/login", methods=["POST"])
+@csrf.exempt
+def api_login():
+    data = request.get_json(silent=True) or {}
+    username = data.get("username", "")
+    password = data.get("password", "")
+
+    user = User.query.filter_by(username=username).first()
+
+    if user and check_password_hash(user.password, password):
+        token = create_access_token(identity=str(user.id))
+        return jsonify({"token": token, "user_id": user.id, "username": user.username})
+
+    return jsonify({"error": "Invalid username or password"}), 401
+
+@app.route("/api/dashboard", methods=["GET"])
+@jwt_required()
+def api_dashboard():
+    user_id = int(get_jwt_identity())
+
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+    if not progress:
+        return jsonify({"error": "No progress found"}), 404
+
+    region = REGIONS.get(progress.level, {})
+    badges = get_badges(progress.level)
+    evolution = get_evolution_label(progress.level)
+
+    return jsonify({
+        "level": progress.level,
+        "xp": progress.xp,
+        "region_name": region.get("name", "Unknown"),
+        "evolution": evolution,
+        "badges": badges,
+    })
+    
+@app.route("/api/send-reminders", methods=["POST"])
+@csrf.exempt
+def send_reminders():
+    provided_secret = request.headers.get("X-Cron-Secret")
+    if provided_secret != CRON_SECRET:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    user_ids = get_users_needing_reminder()
+    sent = 0
+
+    for user_id in user_ids:
+        results = send_push_to_user(
+            user_id,
+            "Rise Back",
+            "You haven't finished today's missions yet — don't break your streak, warrior."
+        )
+        if any(r["success"] for r in results):
+            sent += 1
+
+    return jsonify({"users_checked": len(user_ids), "notifications_sent": sent})
 
 @app.route("/dashboard")
 @login_required
@@ -1025,7 +1681,9 @@ def dashboard():
 
     completed_today = {
         mission.mission_name
-        for mission in DailyMission.query.filter_by(user_id=user_id, mission_date=today).all()
+        for mission in DailyMission.query.filter_by(
+            user_id=user_id, mission_date=today
+        ).all()
     }
     water_done = "Drink 2500ml Water" in completed_today
 
@@ -1105,7 +1763,7 @@ def dashboard():
 
     xp_percent = min((progress.xp / 30) * 100, 100)
 
-    badges = get_badges(progress.xp)
+    badges = get_badges(progress.level)
 
     warrior_title = "Recruit"
 
@@ -1148,19 +1806,19 @@ def dashboard():
         {"level": 5, "name": "🔥 Legacy Throne"},
     ]
 
-    if progress.xp >= 75:
+    if progress.level >= 5:
 
         evolution = "✨ CELESTIAL"
 
-    elif progress.xp >= 50:
+    elif progress.level >= 4:
 
         evolution = "👑 GOD"
 
-    elif progress.xp >= 30:
+    elif progress.level >= 3:
 
         evolution = "🔥 DEMIGOD"
 
-    elif progress.xp >= 15:
+    elif progress.level >= 2:
 
         evolution = "⚔ WARRIOR"
 
@@ -1168,7 +1826,7 @@ def dashboard():
 
         evolution = "⚫ MORTAL"
 
-    evolution_rate = min(round((progress.xp / 75) * 100), 100)
+    evolution_rate = min(round((progress.level / 5) * 100), 100)
 
     shadow_boss = None
 
@@ -1213,12 +1871,12 @@ def dashboard():
         challenge_progress=region_progress,
         goal_plan=goal_plan,
     )
-    
+
     mentor_response = session.get("mentor_response", mentor_reply)
     mentor_history = session.get("mentor_history", [])
-    
+
     ai_message = mentor_reply
-    
+
     return render_template(
         "dashboard.html",
         progress=progress,
@@ -1401,6 +2059,10 @@ def workouts():
 @login_required
 def challenges(level):
 
+    progress = UserProgress.query.filter_by(user_id=session["user"]).first()
+    if not progress or level > progress.level:
+        return redirect(url_for("dashboard"))
+
     data = get_region_challenges(level)
     region = REGION_CONFIG.get(level, REGION_CONFIG[1])
 
@@ -1578,7 +2240,9 @@ def complete_mission():
 
     mission_name = request.form["mission"]
 
-    water = WaterTracker.query.filter_by(user_id=user_id, water_date=date.today()).first()
+    water = WaterTracker.query.filter_by(
+        user_id=user_id, water_date=date.today()
+    ).first()
 
     if mission_name == "Drink 2500ml Water":
 
@@ -1643,16 +2307,21 @@ def boss_battle():
 
     completed_names = {
         mission.mission_name
-        for mission in DailyMission.query.filter_by(user_id=user_id, mission_date=date.today()).all()
+        for mission in DailyMission.query.filter_by(
+            user_id=user_id, mission_date=date.today()
+        ).all()
     }
     calorie_complete = any(
         name.startswith(("Stay under ", "Reach ", "Stay near "))
         for name in completed_names
     )
-    if not {
-        "Drink 2500ml Water",
-        "Complete Today's Challenge",
-    }.issubset(completed_names) or not calorie_complete:
+    if (
+        not {
+            "Drink 2500ml Water",
+            "Complete Today's Challenge",
+        }.issubset(completed_names)
+        or not calorie_complete
+    ):
         flash("Complete today's missions before entering the boss battle.", "warning")
         return redirect(url_for("dashboard"))
 
@@ -1766,26 +2435,33 @@ def shadow_boss_battle():
     </a>
     """
 
+
 @app.route("/mentor-chat", methods=["POST"])
 @login_required
 def mentor_chat():
     user_id = session["user"]
     progress = UserProgress.query.filter_by(user_id=user_id).first()
 
-    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json
+    is_ajax = (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json
+    )
 
     if not progress:
         if is_ajax:
-            return jsonify({
-                "response": "Set up your warrior profile first, then your mentor will be ready.",
-                "history": []
-            })
+            return jsonify(
+                {
+                    "response": "Set up your warrior profile first, then your mentor will be ready.",
+                    "history": [],
+                }
+            )
         return redirect(url_for("dashboard"))
 
     user_message = request.form.get("message", "").strip()[:500]
 
     progress = UserProgress.query.filter_by(user_id=user_id).first()
-    water = WaterTracker.query.filter_by(user_id=user_id, water_date=date.today()).first()
+    water = WaterTracker.query.filter_by(
+        user_id=user_id, water_date=date.today()
+    ).first()
     profile = UserProfile.query.filter_by(user_id=user_id).first()
     streak = UserStreak.query.filter_by(user_id=user_id).first()
 
@@ -1817,7 +2493,12 @@ def mentor_chat():
     calorie_target = 0
 
     if profile and all((profile.gender, profile.weight, profile.height, profile.age)):
-        bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age + (5 if profile.gender == "Male" else -161)
+        bmr = (
+            10 * profile.weight
+            + 6.25 * profile.height
+            - 5 * profile.age
+            + (5 if profile.gender == "Male" else -161)
+        )
         calorie_target = round(bmr * activity_factor)
 
     if goal_plan == "Fat Loss Program":
@@ -1856,7 +2537,7 @@ def mentor_chat():
         response = get_mentor_response(
             user_message,
             streak.streak_count if streak else 0,
-            get_evolution_label(progress.xp),
+            get_evolution_label(progress.level),
             boss_available,
             region_name,
             xp_percent,
@@ -1869,11 +2550,15 @@ def mentor_chat():
         mentor_context = {
             "region_name": region_name,
             "level": progress.level,
+            "xp": progress.xp,
             "streak": streak.streak_count if streak else 0,
             "water_ml": water_ml,
             "goal_plan": goal_plan or "Not set",
             "boss_available": boss_available,
             "challenge_progress": challenge_progress,
+            "weight": profile.weight if profile else None,
+            "target_weight": profile.target_weight if profile else None,
+            "calorie_target": calorie_target if calorie_target else None,
         }
         gemini_reply = get_gemini_mentor_reply(
             user_message, mentor_context, session.get("mentor_history", [])
@@ -1885,7 +2570,7 @@ def mentor_chat():
             response = get_mentor_response(
                 user_message,
                 streak.streak_count if streak else 0,
-                get_evolution_label(progress.xp),
+                get_evolution_label(progress.level),
                 boss_available,
                 region_name,
                 xp_percent,
@@ -1906,9 +2591,12 @@ def mentor_chat():
 
     # If this is an AJAX request, return JSON so the frontend can update without reload
     if request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.is_json:
-        return jsonify({"response": response, "history": session.get("mentor_history", [])})
+        return jsonify(
+            {"response": response, "history": session.get("mentor_history", [])}
+        )
 
     return redirect(url_for("dashboard"))
+
 
 @app.route("/logout", methods=["POST"])
 @login_required

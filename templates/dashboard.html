@@ -1133,7 +1133,7 @@
             overflow: hidden;
             border: 1px solid rgba(255, 255, 255, 0.08);
             flex-shrink: 0;
-            background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02));
             display: flex;
             align-items: flex-start;
             justify-content: center;
@@ -1146,7 +1146,7 @@
             object-position: 50% 12%;
             display: block;
             transform: translateY(-6%);
-            background: rgba(255,255,255,0.02);
+            background: rgba(255, 255, 255, 0.02);
         }
 
         .mentor-overlay {
@@ -1668,9 +1668,24 @@
             color: white;
 
         }
-        .flash-stack { position: fixed; top: 16px; right: 16px; z-index: 3000; }
-        .flash-message { padding: 12px 16px; border: 1px solid var(--gold); border-radius: 8px; background: #17131f; }
-        .flash-message.warning { border-color: var(--crimson); }
+
+        .flash-stack {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            z-index: 3000;
+        }
+
+        .flash-message {
+            padding: 12px 16px;
+            border: 1px solid var(--gold);
+            border-radius: 8px;
+            background: #17131f;
+        }
+
+        .flash-message.warning {
+            border-color: var(--crimson);
+        }
     </style>
 </head>
 
@@ -1733,7 +1748,8 @@
 
             <button type="button" class="vault-btn" onclick="toggleVault()" aria-controls="vault" aria-expanded="false">
                 <div class="vault-icon">
-                    <img src="{{ url_for('static', filename='forms/transformation_vault.webp') }}" alt="Transformation Vault" loading="lazy">
+                    <img src="{{ url_for('static', filename='forms/transformation_vault.webp') }}"
+                        alt="Transformation Vault" loading="lazy">
                 </div>
                 <div>
                     <div class="title">Transformation Vault</div>
@@ -1742,9 +1758,11 @@
                 <div class="chev">❯</div>
             </button>
 
-            <button type="button" class="vault-btn" onclick="toggleBossVault()" aria-controls="boss-vault" aria-expanded="false">
+            <button type="button" class="vault-btn" onclick="toggleBossVault()" aria-controls="boss-vault"
+                aria-expanded="false">
                 <div class="vault-icon">
-                    <img src="{{ url_for('static', filename='forms/boss_vault.webp') }}" alt="Boss Vault" loading="lazy">
+                    <img src="{{ url_for('static', filename='forms/boss_vault.webp') }}" alt="Boss Vault"
+                        loading="lazy">
                 </div>
                 <div>
                     <div class="title">Boss Vault</div>
@@ -1863,9 +1881,10 @@
                 </div>
 
                 <!-- Floating mentor button -->
-            <button type="button" class="mentor-fab" onclick="toggleMentor(event)" title="Open Mentor" aria-label="Open mentor chat" aria-controls="mentor-popup" aria-expanded="false">
+                <button type="button" class="mentor-fab" onclick="toggleMentor(event)" title="Open Mentor"
+                    aria-label="Open mentor chat" aria-controls="mentor-popup" aria-expanded="false">
                     <div class="mentor-icon">⚡</div>
-                </div>
+            </div>
 
             </button>
 
@@ -1873,19 +1892,22 @@
                 <div class="mentor-icon-card">⚡</div>
                 <div class="mentor-copy">
                     <div class="mentor-title">Mentor at your fingertips</div>
-                    <p class="mentor-note">Tap the thunder icon on the bottom-right of the map to call your mentor for guidance, motivation, and mission help.</p>
+                    <p class="mentor-note">Tap the thunder icon on the bottom-right of the map to call your mentor for
+                        guidance, motivation, and mission help.</p>
                 </div>
             </div>
 
             <div id="mentor-overlay" class="mentor-overlay" style="display:none;" onclick="toggleMentor(event)"></div>
-            <div id="mentor-popup" class="mentor-popup" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="mentor-title">
+            <div id="mentor-popup" class="mentor-popup" style="display:none;" role="dialog" aria-modal="true"
+                aria-labelledby="mentor-title">
                 <div class="mentor-header">
                     <div id="mentor-title">⚡ RONALDO</div>
                     <span class="mentor-status">● ONLINE</span>
                 </div>
                 <div class="mentor-body">
                     <div class="mentor-image">
-                        <img src="{{ url_for('static', filename='mentor/aris.png') }}" alt="RONALDO, your fitness mentor">
+                        <img src="{{ url_for('static', filename='mentor/aris.png') }}"
+                            alt="RONALDO, your fitness mentor">
                     </div>
                     <div class="mentor-chat">
                         <div class="chat-list" id="mentor-chat-list">
@@ -1899,7 +1921,8 @@
                         </div>
                         <form action="/mentor-chat" method="POST" id="mentor-form">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="text" id="mentor-input" name="message" maxlength="500" autocomplete="off" placeholder="Ask RONALDO about your next step..." aria-label="Message RONALDO">
+                            <input type="text" id="mentor-input" name="message" maxlength="500" autocomplete="off"
+                                placeholder="Ask RONALDO about your next step..." aria-label="Message RONALDO">
                             <button type="submit" aria-label="Send message">➤</button>
                         </form>
                     </div>
@@ -2089,7 +2112,8 @@
             <div class="panel" style="margin-top:18px;">
                 <h4>🌍 Current Region</h4>
                 <h3 style="color:var(--gold-light); font-size:20px;">{{ region_name }}</h3>
-                <p class="sub" style="margin-top:6px;">{{ region_target }} challenge milestones • {{ region_weeks }} weeks</p>
+                <p class="sub" style="margin-top:6px;">{{ region_target }} challenge milestones • {{ region_weeks }}
+                    weeks</p>
                 <div class="progress-track" style="margin-top:8px;">
                     <div class="progress-fill good" style="width:{{ region_progress }}%;">{{ region_progress }}%
                     </div>
@@ -2212,7 +2236,7 @@
     </script>
 
     <script>
-        const initialMentorHistory = {{ mentor_history|tojson }};
+        const initialMentorHistory = {{ mentor_history| tojson }};
 
         function renderMentorThread(history = initialMentorHistory) {
             const chatList = document.getElementById('mentor-chat-list');
@@ -2229,19 +2253,19 @@
             } else {
                 const initial = document.createElement('div');
                 initial.className = 'chat-bubble mentor';
-                initial.textContent = {{ (mentor_response or ai_message)|tojson }};
-                chatList.appendChild(initial);
-            }
+                initial.textContent = {{ (mentor_response or ai_message)| tojson }};
+            chatList.appendChild(initial);
+        }
 
-            chatList.scrollTop = chatList.scrollHeight;
+        chatList.scrollTop = chatList.scrollHeight;
         }
 
         document.addEventListener('DOMContentLoaded', function () {
             renderMentorThread();
-            const hasMentorHistory = {{ (mentor_history|length > 0)|tojson }};
-            if (hasMentorHistory || window.location.hash === '#mentor') {
-                try { setMentorVisible(true); } catch (e) {}
-            }
+            const hasMentorHistory = {{ (mentor_history | length > 0) | tojson }};
+        if (hasMentorHistory || window.location.hash === '#mentor') {
+            try { setMentorVisible(true); } catch (e) { }
+        }
         });
 
         // AJAX submit for mentor chat to refresh chat without reloading the dashboard
@@ -2257,6 +2281,8 @@
 
                 const params = new URLSearchParams();
                 params.append('message', text);
+                const csrfInput = form.querySelector('input[name="csrf_token"]');
+                if (csrfInput) params.append('csrf_token', csrfInput.value);
 
                 try {
                     const res = await fetch(form.action, {
@@ -2319,6 +2345,7 @@
     </div>
 
     <script>
+        const unlockedRegionLevel = {{ progress.level }};
 
         function openRegion(regionName, level) {
 
@@ -2374,6 +2401,11 @@
                 categories: []
             };
 
+            const enterButton =
+                level > unlockedRegionLevel
+                    ? `<a class="boss-btn locked" onclick="return false;">Locked until current region is complete</a>`
+                    : `<a href="/challenges/${level}" class="boss-btn">Enter Region</a>`;
+
             document.getElementById("regionDesc").innerHTML = `
                 <p>${data.desc}</p>
 
@@ -2389,10 +2421,7 @@
 
                 <br><br>
 
-                <a href="/challenges/${level}"
-                   class="boss-btn">
-                   Enter Region
-                </a>
+                ${enterButton}
             `;
         }
 

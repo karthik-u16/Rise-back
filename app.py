@@ -34,7 +34,7 @@ CRON_SECRET = os.environ.get("CRON_SECRET", "change-this-locally")
 import firebase_admin
 from firebase_admin import credentials, messaging
 
-cred = credentials.Certificate("firebase-service-account.json")
+cred = credentials.Certificate("/etc/secrets/firebase-service-account.json")
 firebase_admin.initialize_app(cred)
 
 from flask_sqlalchemy import SQLAlchemy
@@ -1341,7 +1341,7 @@ def get_mentor_response(
         for word in ["progress", "xp", "streak", "weight", "goal", "lost", "gain"]
     ):
         return (
-            "📈 Progress is a collection of small wins. "
+            "📈 Progress is a collection of small wins. "   
             "Keep stacking them with consistency and the results will follow."
         )
 

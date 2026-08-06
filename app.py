@@ -34,8 +34,13 @@ CRON_SECRET = os.environ.get("CRON_SECRET", "change-this-locally")
 import firebase_admin
 from firebase_admin import credentials, messaging
 
-cred = credentials.Certificate("/etc/secrets/firebase-service-account.json")
-firebase_admin.initialize_app(cred)
+if os.path.exists("/etc/secrets/firebase-service-account.json"):
+    # Render
+    cred = credentials.Certificate("/etc/secrets/firebase-service-account.json")
+else:
+    # Local development
+    cred = credentials.Certificate("firebase-service-account.json")
+firebase_admin.initialize_app(cred)                            
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
@@ -1189,6 +1194,8 @@ def get_users_needing_reminder():
     all_users = User.query.all()
     needs_reminder = []
 
+    print("========== REMINDER CHECK ==========")
+
     for user in all_users:
         completed_count = DailyMission.query.filter_by(
             user_id=user.id,
@@ -1196,8 +1203,18 @@ def get_users_needing_reminder():
             completed=True
         ).count()
 
+        print(
+            f"User {user.id} ({user.username}) completed {completed_count} missions today"
+        )
+
         if completed_count < 3:
+            print(" -> Reminder will be sent")
             needs_reminder.append(user.id)
+        else:
+            print(" -> No reminder")
+
+    print("Users needing reminder:", needs_reminder)
+    print("===================================")
 
     return needs_reminder
 

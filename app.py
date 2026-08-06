@@ -1041,18 +1041,43 @@ class Achievement(db.Model):
     
 def send_push_to_user(user_id, title, body):
     tokens = DeviceToken.query.filter_by(user_id=user_id).all()
+
+    print(f"\n===== USER {user_id} =====")
+    print(f"Found {len(tokens)} device token(s)")
+
     results = []
 
     for device in tokens:
+        print(f"Sending to token: {device.fcm_token[:25]}...")
+
         message = messaging.Message(
-            notification=messaging.Notification(title=title, body=body),
+            notification=messaging.Notification(
+                title=title,
+                body=body,
+            ),
             token=device.fcm_token,
         )
+
         try:
             response = messaging.send(message)
-            results.append({"token": device.fcm_token[:20] + "...", "success": True, "id": response})
+
+            print("✅ Success:", response)
+
+            results.append({
+                "token": device.fcm_token[:20] + "...",
+                "success": True,
+                "id": response
+            })
+
         except Exception as e:
-            results.append({"token": device.fcm_token[:20] + "...", "success": False, "error": str(e)})
+
+            print("❌ Firebase Error:", e)
+
+            results.append({
+                "token": device.fcm_token[:20] + "...",
+                "success": False,
+                "error": str(e)
+            })
 
     return results
 

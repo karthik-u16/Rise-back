@@ -1562,6 +1562,127 @@ def send_reminders():
 
     return jsonify({"users_checked": len(user_ids), "notifications_sent": sent})
 
+@app.route("/api/workouts", methods=["GET"])
+@jwt_required()
+def api_workouts_get():
+    user_id = int(get_jwt_identity())
+    today = date.today()
+    weekday = today.weekday()
+    todays_plan = WORKOUT_SCHEDULE[weekday]
+
+    start_of_week = today - timedelta(days=weekday)
+    week_dates = [start_of_week + timedelta(days=i) for i in range(7)]
+
+    logs_this_week = WorkoutLog.query.filter(
+        WorkoutLog.user_id == user_id,
+        WorkoutLog.workout_date >= start_of_week,
+        WorkoutLog.workout_date <= week_dates[-1],
+    ).all()
+
+    logged_dates = {log.workout_date for log in logs_this_week}
+
+    total_logged = WorkoutLog.query.filter_by(user_id=user_id).count()
+    total_calories_week = sum(l.calories_burned or 0 for l in logs_this_week)
+    total_minutes_week = sum(l.duration_minutes or 0 for l in logs_this_week)
+
+    recent_logs = (
+        WorkoutLog.query.filter_by(user_id=user_id)
+        .order_by(WorkoutLog.id.desc())
+        .limit(10)
+        .all()
+    )
+
+    week_strip = []
+    for i, d in enumerate(week_dates):
+        week_strip.append({
+            "label": WORKOUT_SCHEDULE[i]["day"][:3],
+            "date": d.isoformat(),
+            "icon": WORKOUT_SCHEDULE[i]["icon"],
+            "focus": WORKOUT_SCHEDULE[i]["focus"],
+            "is_today": d == today,
+            "logged": d in logged_dates,
+            "is_future": d > today,
+        })
+
+    recent_logs_json = [{
+        "id": log.id,
+        "exercise_name": log.exercise_name,
+        "category": log.category,
+        "sets": log.sets,
+        "reps": log.reps,
+        "weight_kg": log.weight_kg,
+        "duration_minutes": log.duration_minutes,
+        "calories_burned": log.calories_burned,
+        "notes": log.notes,
+        "workout_date": log.workout_date.isoformat(),
+    } for log in recent_logs]
+
+    return jsonify({
+        "todays_plan": todays_plan,
+        "week_strip": week_strip,
+        "recent_logs": recent_logs_json,
+        "total_logged": total_logged,
+        "total_calories_week": total_calories_week,
+        "total_minutes_week": total_minutes_week,
+        "logs_this_week_count": len(logs_this_week),
+    })
+
+
+@app.route("/api/workouts", methods=["POST"])
+@jwt_required()
+@csrf.exempt
+def api_workouts_post():
+    user_id = int(get_jwt_identity())
+    today = date.today()
+    weekday = today.weekday()
+    todays_plan = WORKOUT_SCHEDULE[weekday]
+
+    data = request.get_json(silent=True) or {}
+    exercise_name = (data.get("exercise_name") or "").strip()
+    sets = data.get("sets")
+    reps = data.get("reps")
+    weight_kg = data.get("weight_kg")
+    duration = data.get("duration_minutes")
+    notes = (data.get("notes") or "").strip()
+
+    if not exercise_name:
+        return jsonify({"error": "exercise_name is required"}), 400
+
+    duration_val = int(duration) if duration else 0
+    cal_rate = CATEGORY_CALORIES_PER_MIN.get(todays_plan["focus"], 6)
+    calories = round(duration_val * cal_rate) if duration_val else None
+
+    log = WorkoutLog(
+        user_id=user_id,
+        workout_date=today,
+        exercise_name=exercise_name,
+        category=todays_plan["focus"],
+        sets=int(sets) if sets else None,
+        reps=int(reps) if reps else None,
+        weight_kg=float(weight_kg) if weight_kg else None,
+        duration_minutes=duration_val if duration_val else None,
+        calories_burned=calories,
+        notes=notes or None,
+    )
+    db.session.add(log)
+
+    logs_today_count = WorkoutLog.query.filter_by(user_id=user_id, workout_date=today).count()
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    if progress and logs_today_count < 3:
+        progress.xp += 5
+        award_region_progress(progress, 1)
+
+    first_workout = Achievement.query.filter_by(user_id=user_id, achievement_name="Iron Will").first()
+    new_achievement = None
+    if not first_workout:
+        db.session.add(Achievement(user_id=user_id, achievement_name="Iron Will"))
+        new_achievement = {"title": "Iron Will", "description": "Logged your first workout"}
+
+    db.session.commit()
+
+    return jsonify({"success": True, "new_achievement": new_achievement})
+
 @app.route("/dashboard")
 @login_required
 def dashboard():

@@ -1165,10 +1165,11 @@ def get_gemini_mentor_reply(user_message, context, history):
         if response.status_code == 200:
             data = response.json()
             return data["candidates"][0]["content"]["parts"][0]["text"]
+        print(f"GEMINI FAILED - status: {response.status_code}, body: {response.text}")
         return None
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
+        print(f"GEMINI REQUEST EXCEPTION: {e}")
         return None
-
 
 def get_ai_message(
     streak,

@@ -1103,7 +1103,10 @@ if GEMINI_API_KEY:
 else:
     print("GEMINI_API_KEY is MISSING or empty")
 GEMINI_MODEL = "gemini-3.1-flash-lite"
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+GEMINI_URL = (
+    f"https://generativelanguage.googleapis.com/"
+    f"v1beta/models/{GEMINI_MODEL}:generateContent"
+)
 
 SELF_HARM_PHRASES = [
     "hurt myself",
@@ -1165,7 +1168,15 @@ def get_gemini_mentor_reply(user_message, context, history):
     }
 
     try:
-        response = requests.post(GEMINI_URL, json=payload, timeout=12)
+        response = requests.post(
+            GEMINI_URL,
+            headers={
+                "x-goog-api-key": GEMINI_API_KEY,
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=12,
+        )
         if response.status_code == 200:
             data = response.json()
             return data["candidates"][0]["content"]["parts"][0]["text"]

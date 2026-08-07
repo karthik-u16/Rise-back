@@ -1871,6 +1871,91 @@ def api_mentor_chat():
 
     return jsonify({"response": response, "history": updated_history})
 
+@app.route("/api/profile", methods=["GET"])
+@jwt_required()
+def api_profile_get():
+    user_id = int(get_jwt_identity())
+    existing_profile = UserProfile.query.filter_by(user_id=user_id).first()
+
+    if not existing_profile:
+        return jsonify({"profile": None})
+
+    return jsonify({
+        "profile": {
+            "age": existing_profile.age,
+            "gender": existing_profile.gender,
+            "height": existing_profile.height,
+            "weight": existing_profile.weight,
+            "fitness_goal": existing_profile.fitness_goal,
+            "activity_level": existing_profile.activity_level,
+            "target_weight": existing_profile.target_weight,
+        }
+    })
+
+
+@app.route("/api/profile", methods=["POST"])
+@jwt_required()
+@csrf.exempt
+def api_profile_post():
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+
+    required = ["age", "gender", "height", "weight", "fitness_goal", "activity_level", "target_weight"]
+    missing = [field for field in required if field not in data]
+    if missing:
+        return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+
+    existing_profile = UserProfile.query.filter_by(user_id=user_id).first()
+
+    if not existing_profile:
+        existing_profile = UserProfile(user_id=user_id)
+        db.session.add(existing_profile)
+
+    existing_profile.age = data["age"]
+    existing_profile.gender = data["gender"]
+    existing_profile.height = data["height"]
+    existing_profile.weight = data["weight"]
+    existing_profile.fitness_goal = data["fitness_goal"]
+    existing_profile.activity_level = data["activity_level"]
+    existing_profile.target_weight = data["target_weight"]
+
+    db.session.commit()
+
+    return jsonify({"success": True})
+
+@app.route("/api/weight", methods=["GET"])
+@jwt_required()
+def api_weight_get():
+    user_id = int(get_jwt_identity())
+
+    logs = (
+        WeightLog.query.filter_by(user_id=user_id)
+        .order_by(WeightLog.log_date.desc())
+        .all()
+    )
+
+    logs_json = [{"weight": log.weight, "log_date": log.log_date.isoformat()} for log in logs]
+
+    return jsonify({"logs": logs_json})
+
+
+@app.route("/api/weight", methods=["POST"])
+@jwt_required()
+@csrf.exempt
+def api_weight_post():
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+    weight_val = data.get("weight")
+
+    if not weight_val:
+        return jsonify({"error": "weight is required"}), 400
+
+    log = WeightLog(user_id=user_id, weight=weight_val, log_date=date.today())
+    db.session.add(log)
+    db.session.commit()
+
+    return jsonify({"success": True})
+
 @app.route("/dashboard")
 @login_required
 def dashboard():

@@ -1683,6 +1683,93 @@ def api_workouts_post():
 
     return jsonify({"success": True, "new_achievement": new_achievement})
 
+@app.route("/api/challenges/<int:level>", methods=["GET"])
+@jwt_required()
+def api_challenges(level):
+    user_id = int(get_jwt_identity())
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    if not progress or level > progress.level:
+        return jsonify({"error": "Region locked"}), 403
+
+    data = get_region_challenges(level)
+    region = REGION_CONFIG.get(level, REGION_CONFIG[1])
+
+    return jsonify({
+        "challenges": data,
+        "level": level,
+        "region_name": region["name"],
+        "weeks": region["weeks"],
+        "target_progress": region["target_progress"],
+    })
+
+
+@app.route("/api/complete/<int:level>", methods=["POST"])
+@jwt_required()
+@csrf.exempt
+def api_complete(level):
+    user_id = int(get_jwt_identity())
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    if not progress or level != progress.level:
+        return jsonify({"error": "Level mismatch"}), 403
+
+    today = date.today()
+    new_achievements = []
+
+    streak = UserStreak.query.filter_by(user_id=user_id).first()
+    if not streak:
+        streak = UserStreak(user_id=user_id, streak_count=1, last_active=today)
+        db.session.add(streak)
+    else:
+        days_gap = (today - streak.last_active).days
+        if days_gap == 1:
+            streak.streak_count += 1
+        elif days_gap > 1:
+            streak.streak_count = 1
+        streak.last_active = today
+
+    challenge_reward = DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Challenge XP Reward", mission_date=today
+    ).first()
+    if not challenge_reward:
+        progress.xp += 3
+        award_region_progress(progress, 1)
+        db.session.add(DailyMission(
+            user_id=user_id, mission_name="Challenge XP Reward",
+            mission_date=today, completed=True,
+        ))
+
+    first_blood = Achievement.query.filter_by(user_id=user_id, achievement_name="First Blood").first()
+    if not first_blood:
+        db.session.add(Achievement(user_id=user_id, achievement_name="First Blood"))
+        new_achievements.append({"title": "First Blood", "description": "Completed your first challenge"})
+
+    if streak.streak_count >= 7:
+        iron = Achievement.query.filter_by(user_id=user_id, achievement_name="Iron Streak").first()
+        if not iron:
+            db.session.add(Achievement(user_id=user_id, achievement_name="Iron Streak"))
+            new_achievements.append({"title": "Iron Streak", "description": "7-day streak reached"})
+
+    existing = DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Complete Today's Challenge", mission_date=today
+    ).first()
+    if not existing:
+        progress.xp += 20
+        db.session.add(DailyMission(
+            user_id=user_id, mission_name="Complete Today's Challenge",
+            mission_date=today, completed=True,
+        ))
+
+    db.session.commit()
+
+    return jsonify({
+        "success": True,
+        "streak_count": streak.streak_count,
+        "xp": progress.xp,
+        "new_achievements": new_achievements,
+    })
+
 @app.route("/dashboard")
 @login_required
 def dashboard():

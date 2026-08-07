@@ -1769,6 +1769,102 @@ def api_complete(level):
         "xp": progress.xp,
         "new_achievements": new_achievements,
     })
+    
+@app.route("/api/mentor-chat", methods=["POST"])
+@jwt_required()
+@csrf.exempt
+def api_mentor_chat():
+    user_id = int(get_jwt_identity())
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    if not progress:
+        return jsonify({"response": "Set up your warrior profile first, then your mentor will be ready.", "history": []})
+
+    data = request.get_json(silent=True) or {}
+    user_message = (data.get("message") or "").strip()[:500]
+    client_history = data.get("history", [])
+
+    water = WaterTracker.query.filter_by(user_id=user_id, water_date=date.today()).first()
+    profile = UserProfile.query.filter_by(user_id=user_id).first()
+    streak = UserStreak.query.filter_by(user_id=user_id).first()
+
+    if not streak:
+        streak = UserStreak(user_id=user_id, streak_count=0)
+
+    goal_plan = None
+    if profile and profile.height and profile.weight:
+        height_m = profile.height / 100
+        bmi = round(profile.weight / (height_m * height_m), 1)
+        if bmi < 18.5:
+            goal_plan = "Muscle Gain Program"
+        elif bmi < 25:
+            goal_plan = "Maintenance Program"
+        elif bmi < 30:
+            goal_plan = "Fat Loss Program"
+        else:
+            goal_plan = "Aggressive Fat Loss Program"
+
+    today = date.today()
+    water_done = DailyMission.query.filter_by(user_id=user_id, mission_name="Drink 2500ml Water", mission_date=today).first()
+
+    activity_factor = get_activity_factor(profile.activity_level) if profile else 1.2
+    calorie_target = 0
+    if profile and all((profile.gender, profile.weight, profile.height, profile.age)):
+        bmr = (10 * profile.weight + 6.25 * profile.height - 5 * profile.age + (5 if profile.gender == "Male" else -161))
+        calorie_target = round(bmr * activity_factor)
+
+    if goal_plan == "Fat Loss Program":
+        calorie_text = f"Stay under {calorie_target - 500:.0f} kcal"
+    elif goal_plan == "Muscle Gain Program":
+        calorie_text = f"Reach {calorie_target + 300:.0f} kcal"
+    else:
+        calorie_text = f"Stay near {calorie_target:.0f} kcal"
+
+    calorie_done = DailyMission.query.filter_by(user_id=user_id, mission_name=calorie_text, mission_date=today).first()
+    challenge_done = DailyMission.query.filter_by(user_id=user_id, mission_name="Complete Today's Challenge", mission_date=today).first()
+
+    completed_missions = sum([bool(water_done), bool(calorie_done), bool(challenge_done)])
+    challenge_progress = round((completed_missions / 3) * 100, 1)
+
+    current_region = REGIONS.get(progress.level, REGIONS[1])
+    region_name = current_region["name"]
+    xp_percent = min((progress.xp / 30) * 100, 100)
+    boss_defeated = BossBattle.query.filter_by(user_id=user_id, boss_level=progress.level).first()
+    boss_available = (completed_missions == 3) and not boss_defeated
+    water_ml = water.water_ml if water else 0
+    water_limit_reached = water_ml >= 3000
+
+    if check_self_harm(user_message):
+        response = get_mentor_response(
+            user_message, streak.streak_count if streak else 0, get_evolution_label(progress.level),
+            boss_available, region_name, xp_percent, water_ml, water_limit_reached, goal_plan, challenge_progress,
+        )
+    else:
+        mentor_context = {
+            "region_name": region_name, "level": progress.level, "xp": progress.xp,
+            "streak": streak.streak_count if streak else 0, "water_ml": water_ml,
+            "goal_plan": goal_plan or "Not set", "boss_available": boss_available,
+            "challenge_progress": challenge_progress, "weight": profile.weight if profile else None,
+            "target_weight": profile.target_weight if profile else None,
+            "calorie_target": calorie_target if calorie_target else None,
+        }
+        gemini_reply = get_gemini_mentor_reply(user_message, mentor_context, client_history)
+
+        if gemini_reply:
+            response = gemini_reply
+        else:
+            response = get_mentor_response(
+                user_message, streak.streak_count if streak else 0, get_evolution_label(progress.level),
+                boss_available, region_name, xp_percent, water_ml, water_limit_reached, goal_plan, challenge_progress,
+            )
+
+    updated_history = list(client_history)
+    if user_message:
+        updated_history.append({"sender": "user", "text": user_message})
+    updated_history.append({"sender": "mentor", "text": response})
+    updated_history = updated_history[-6:]
+
+    return jsonify({"response": response, "history": updated_history})
 
 @app.route("/dashboard")
 @login_required

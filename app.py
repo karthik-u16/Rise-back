@@ -1098,6 +1098,10 @@ def get_badges(level):
     return badges
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    print(f"GEMINI_API_KEY loaded: {GEMINI_API_KEY[:6]}...{GEMINI_API_KEY[-4:]} (length {len(GEMINI_API_KEY)})")
+else:
+    print("GEMINI_API_KEY is MISSING or empty")
 GEMINI_MODEL = "gemini-3.1-flash-lite"
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
 

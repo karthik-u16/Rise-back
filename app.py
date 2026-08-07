@@ -3,7 +3,7 @@ from flask import session
 from flask import Flask, render_template, redirect, url_for, request, jsonify, flash
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import date, timedelta , datetime
+from datetime import date, timedelta, datetime
 from dotenv import load_dotenv
 from flask_jwt_extended import create_access_token
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -14,7 +14,7 @@ import random
 import requests
 
 app = Flask(__name__)
-               
+
 # Secret key: reads from environment variable in production, fallback for local dev only
 app.secret_key = os.environ.get("SECRET_KEY", "riseback_dev_key_change_in_prod")
 app.config.update(
@@ -40,7 +40,7 @@ if os.path.exists("/etc/secrets/firebase-service-account.json"):
 else:
     # Local development
     cred = credentials.Certificate("firebase-service-account.json")
-firebase_admin.initialize_app(cred)                            
+firebase_admin.initialize_app(cred)
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import inspect, text
@@ -865,12 +865,14 @@ CATEGORY_CALORIES_PER_MIN = {
     "General": 6,
 }
 
+
 class DeviceToken(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, nullable=False)
     fcm_token = db.Column(db.String(300), nullable=False, unique=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
+
+
 class User(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
@@ -1028,7 +1030,8 @@ class ShadowBoss(db.Model):
     user_id = db.Column(db.Integer)
 
     defeated = db.Column(db.Boolean, default=False)
-    
+
+
 class Achievement(db.Model):
 
     __table_args__ = (db.UniqueConstraint("user_id", "achievement_name"),)
@@ -1038,7 +1041,8 @@ class Achievement(db.Model):
     user_id = db.Column(db.Integer, nullable=False)
 
     achievement_name = db.Column(db.String(100), nullable=False)
-    
+
+
 def send_push_to_user(user_id, title, body):
     tokens = DeviceToken.query.filter_by(user_id=user_id).all()
 
@@ -1063,21 +1067,25 @@ def send_push_to_user(user_id, title, body):
 
             print("✅ Success:", response)
 
-            results.append({
-                "token": device.fcm_token[:20] + "...",
-                "success": True,
-                "id": response
-            })
+            results.append(
+                {
+                    "token": device.fcm_token[:20] + "...",
+                    "success": True,
+                    "id": response,
+                }
+            )
 
         except Exception as e:
 
             print("❌ Firebase Error:", e)
 
-            results.append({
-                "token": device.fcm_token[:20] + "...",
-                "success": False,
-                "error": str(e)
-            })
+            results.append(
+                {
+                    "token": device.fcm_token[:20] + "...",
+                    "success": False,
+                    "error": str(e),
+                }
+            )
 
     return results
 
@@ -1097,16 +1105,16 @@ def get_badges(level):
 
     return badges
 
+
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_API_KEY:
-    print(f"GEMINI_API_KEY loaded: {GEMINI_API_KEY[:6]}...{GEMINI_API_KEY[-4:]} (length {len(GEMINI_API_KEY)})")
+    print(
+        f"GEMINI_API_KEY loaded: {GEMINI_API_KEY[:6]}...{GEMINI_API_KEY[-4:]} (length {len(GEMINI_API_KEY)})"
+    )
 else:
     print("GEMINI_API_KEY is MISSING or empty")
 GEMINI_MODEL = "gemini-3.1-flash-lite"
-GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/"
-    f"v1beta/models/{GEMINI_MODEL}:generateContent"
-)
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
 
 SELF_HARM_PHRASES = [
     "hurt myself",
@@ -1124,9 +1132,15 @@ def check_self_harm(user_message):
 
 
 def build_mentor_system_prompt(context):
-    weight_line = f"{context['weight']}kg" if context['weight'] else "not set"
-    target_line = f"{context['target_weight']}kg" if context['target_weight'] else "not set"
-    calorie_line = f"{context['calorie_target']} kcal/day maintenance" if context['calorie_target'] else "not calculated yet (profile incomplete)"
+    weight_line = f"{context['weight']}kg" if context["weight"] else "not set"
+    target_line = (
+        f"{context['target_weight']}kg" if context["target_weight"] else "not set"
+    )
+    calorie_line = (
+        f"{context['calorie_target']} kcal/day maintenance"
+        if context["calorie_target"]
+        else "not calculated yet (profile incomplete)"
+    )
 
     return f"""You are a fitness mentor inside a gamified fitness app called Rise Back.
 The app has a warrior/ascension theme — your personality is intense, direct, and encouraging, like a mentor training a warrior.
@@ -1168,15 +1182,7 @@ def get_gemini_mentor_reply(user_message, context, history):
     }
 
     try:
-        response = requests.post(
-            GEMINI_URL,
-            headers={
-                "x-goog-api-key": GEMINI_API_KEY,
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=12,
-        )
+        response = requests.post(GEMINI_URL, json=payload, timeout=12)
         if response.status_code == 200:
             data = response.json()
             return data["candidates"][0]["content"]["parts"][0]["text"]
@@ -1185,6 +1191,7 @@ def get_gemini_mentor_reply(user_message, context, history):
     except requests.exceptions.RequestException as e:
         print(f"GEMINI REQUEST EXCEPTION: {e}")
         return None
+
 
 def get_ai_message(
     streak,
@@ -1230,6 +1237,7 @@ def get_ai_message(
 
     return "Every strong body starts as an unfinished one. Keep building."
 
+
 def get_users_needing_reminder():
     today = date.today()
     all_users = User.query.all()
@@ -1239,9 +1247,7 @@ def get_users_needing_reminder():
 
     for user in all_users:
         completed_count = DailyMission.query.filter_by(
-            user_id=user.id,
-            mission_date=today,
-            completed=True
+            user_id=user.id, mission_date=today, completed=True
         ).count()
 
         print(
@@ -1258,6 +1264,7 @@ def get_users_needing_reminder():
     print("===================================")
 
     return needs_reminder
+
 
 def get_activity_factor(activity_level):
     return {
@@ -1399,7 +1406,7 @@ def get_mentor_response(
         for word in ["progress", "xp", "streak", "weight", "goal", "lost", "gain"]
     ):
         return (
-            "📈 Progress is a collection of small wins. "   
+            "📈 Progress is a collection of small wins. "
             "Keep stacking them with consistency and the results will follow."
         )
 
@@ -1493,6 +1500,7 @@ def login():
 
     return render_template("login.html")
 
+
 @app.route("/api/register-device", methods=["POST"])
 @jwt_required()
 @csrf.exempt
@@ -1513,13 +1521,17 @@ def register_device():
     db.session.commit()
     return jsonify({"success": True})
 
+
 @app.route("/api/test-push", methods=["POST"])
 @jwt_required()
 @csrf.exempt
 def test_push():
     user_id = int(get_jwt_identity())
-    results = send_push_to_user(user_id, "Rise Back", "This is a real test push from your Flask backend!")
+    results = send_push_to_user(
+        user_id, "Rise Back", "This is a real test push from your Flask backend!"
+    )
     return jsonify({"results": results})
+
 
 @app.route("/api/login", methods=["POST"])
 @csrf.exempt
@@ -1536,6 +1548,7 @@ def api_login():
 
     return jsonify({"error": "Invalid username or password"}), 401
 
+
 @app.route("/api/dashboard", methods=["GET"])
 @jwt_required()
 def api_dashboard():
@@ -1549,14 +1562,17 @@ def api_dashboard():
     badges = get_badges(progress.level)
     evolution = get_evolution_label(progress.level)
 
-    return jsonify({
-        "level": progress.level,
-        "xp": progress.xp,
-        "region_name": region.get("name", "Unknown"),
-        "evolution": evolution,
-        "badges": badges,
-    })
-    
+    return jsonify(
+        {
+            "level": progress.level,
+            "xp": progress.xp,
+            "region_name": region.get("name", "Unknown"),
+            "evolution": evolution,
+            "badges": badges,
+        }
+    )
+
+
 @app.route("/api/send-reminders", methods=["POST"])
 @csrf.exempt
 def send_reminders():
@@ -1571,12 +1587,13 @@ def send_reminders():
         results = send_push_to_user(
             user_id,
             "Rise Back",
-            "You haven't finished today's missions yet — don't break your streak, warrior."
+            "You haven't finished today's missions yet — don't break your streak, warrior.",
         )
         if any(r["success"] for r in results):
             sent += 1
 
     return jsonify({"users_checked": len(user_ids), "notifications_sent": sent})
+
 
 @app.route("/api/workouts", methods=["GET"])
 @jwt_required()
@@ -1610,38 +1627,45 @@ def api_workouts_get():
 
     week_strip = []
     for i, d in enumerate(week_dates):
-        week_strip.append({
-            "label": WORKOUT_SCHEDULE[i]["day"][:3],
-            "date": d.isoformat(),
-            "icon": WORKOUT_SCHEDULE[i]["icon"],
-            "focus": WORKOUT_SCHEDULE[i]["focus"],
-            "is_today": d == today,
-            "logged": d in logged_dates,
-            "is_future": d > today,
-        })
+        week_strip.append(
+            {
+                "label": WORKOUT_SCHEDULE[i]["day"][:3],
+                "date": d.isoformat(),
+                "icon": WORKOUT_SCHEDULE[i]["icon"],
+                "focus": WORKOUT_SCHEDULE[i]["focus"],
+                "is_today": d == today,
+                "logged": d in logged_dates,
+                "is_future": d > today,
+            }
+        )
 
-    recent_logs_json = [{
-        "id": log.id,
-        "exercise_name": log.exercise_name,
-        "category": log.category,
-        "sets": log.sets,
-        "reps": log.reps,
-        "weight_kg": log.weight_kg,
-        "duration_minutes": log.duration_minutes,
-        "calories_burned": log.calories_burned,
-        "notes": log.notes,
-        "workout_date": log.workout_date.isoformat(),
-    } for log in recent_logs]
+    recent_logs_json = [
+        {
+            "id": log.id,
+            "exercise_name": log.exercise_name,
+            "category": log.category,
+            "sets": log.sets,
+            "reps": log.reps,
+            "weight_kg": log.weight_kg,
+            "duration_minutes": log.duration_minutes,
+            "calories_burned": log.calories_burned,
+            "notes": log.notes,
+            "workout_date": log.workout_date.isoformat(),
+        }
+        for log in recent_logs
+    ]
 
-    return jsonify({
-        "todays_plan": todays_plan,
-        "week_strip": week_strip,
-        "recent_logs": recent_logs_json,
-        "total_logged": total_logged,
-        "total_calories_week": total_calories_week,
-        "total_minutes_week": total_minutes_week,
-        "logs_this_week_count": len(logs_this_week),
-    })
+    return jsonify(
+        {
+            "todays_plan": todays_plan,
+            "week_strip": week_strip,
+            "recent_logs": recent_logs_json,
+            "total_logged": total_logged,
+            "total_calories_week": total_calories_week,
+            "total_minutes_week": total_minutes_week,
+            "logs_this_week_count": len(logs_this_week),
+        }
+    )
 
 
 @app.route("/api/workouts", methods=["POST"])
@@ -1682,22 +1706,30 @@ def api_workouts_post():
     )
     db.session.add(log)
 
-    logs_today_count = WorkoutLog.query.filter_by(user_id=user_id, workout_date=today).count()
+    logs_today_count = WorkoutLog.query.filter_by(
+        user_id=user_id, workout_date=today
+    ).count()
     progress = UserProgress.query.filter_by(user_id=user_id).first()
 
     if progress and logs_today_count < 3:
         progress.xp += 5
         award_region_progress(progress, 1)
 
-    first_workout = Achievement.query.filter_by(user_id=user_id, achievement_name="Iron Will").first()
+    first_workout = Achievement.query.filter_by(
+        user_id=user_id, achievement_name="Iron Will"
+    ).first()
     new_achievement = None
     if not first_workout:
         db.session.add(Achievement(user_id=user_id, achievement_name="Iron Will"))
-        new_achievement = {"title": "Iron Will", "description": "Logged your first workout"}
+        new_achievement = {
+            "title": "Iron Will",
+            "description": "Logged your first workout",
+        }
 
     db.session.commit()
 
     return jsonify({"success": True, "new_achievement": new_achievement})
+
 
 @app.route("/api/challenges/<int:level>", methods=["GET"])
 @jwt_required()
@@ -1711,13 +1743,15 @@ def api_challenges(level):
     data = get_region_challenges(level)
     region = REGION_CONFIG.get(level, REGION_CONFIG[1])
 
-    return jsonify({
-        "challenges": data,
-        "level": level,
-        "region_name": region["name"],
-        "weeks": region["weeks"],
-        "target_progress": region["target_progress"],
-    })
+    return jsonify(
+        {
+            "challenges": data,
+            "level": level,
+            "region_name": region["name"],
+            "weeks": region["weeks"],
+            "target_progress": region["target_progress"],
+        }
+    )
 
 
 @app.route("/api/complete/<int:level>", methods=["POST"])
@@ -1751,41 +1785,60 @@ def api_complete(level):
     if not challenge_reward:
         progress.xp += 3
         award_region_progress(progress, 1)
-        db.session.add(DailyMission(
-            user_id=user_id, mission_name="Challenge XP Reward",
-            mission_date=today, completed=True,
-        ))
+        db.session.add(
+            DailyMission(
+                user_id=user_id,
+                mission_name="Challenge XP Reward",
+                mission_date=today,
+                completed=True,
+            )
+        )
 
-    first_blood = Achievement.query.filter_by(user_id=user_id, achievement_name="First Blood").first()
+    first_blood = Achievement.query.filter_by(
+        user_id=user_id, achievement_name="First Blood"
+    ).first()
     if not first_blood:
         db.session.add(Achievement(user_id=user_id, achievement_name="First Blood"))
-        new_achievements.append({"title": "First Blood", "description": "Completed your first challenge"})
+        new_achievements.append(
+            {"title": "First Blood", "description": "Completed your first challenge"}
+        )
 
     if streak.streak_count >= 7:
-        iron = Achievement.query.filter_by(user_id=user_id, achievement_name="Iron Streak").first()
+        iron = Achievement.query.filter_by(
+            user_id=user_id, achievement_name="Iron Streak"
+        ).first()
         if not iron:
             db.session.add(Achievement(user_id=user_id, achievement_name="Iron Streak"))
-            new_achievements.append({"title": "Iron Streak", "description": "7-day streak reached"})
+            new_achievements.append(
+                {"title": "Iron Streak", "description": "7-day streak reached"}
+            )
 
     existing = DailyMission.query.filter_by(
         user_id=user_id, mission_name="Complete Today's Challenge", mission_date=today
     ).first()
     if not existing:
         progress.xp += 20
-        db.session.add(DailyMission(
-            user_id=user_id, mission_name="Complete Today's Challenge",
-            mission_date=today, completed=True,
-        ))
+        db.session.add(
+            DailyMission(
+                user_id=user_id,
+                mission_name="Complete Today's Challenge",
+                mission_date=today,
+                completed=True,
+            )
+        )
 
     db.session.commit()
 
-    return jsonify({
-        "success": True,
-        "streak_count": streak.streak_count,
-        "xp": progress.xp,
-        "new_achievements": new_achievements,
-    })
-    
+    return jsonify(
+        {
+            "success": True,
+            "streak_count": streak.streak_count,
+            "xp": progress.xp,
+            "new_achievements": new_achievements,
+        }
+    )
+
+
 @app.route("/api/mentor-chat", methods=["POST"])
 @jwt_required()
 @csrf.exempt
@@ -1794,13 +1847,20 @@ def api_mentor_chat():
     progress = UserProgress.query.filter_by(user_id=user_id).first()
 
     if not progress:
-        return jsonify({"response": "Set up your warrior profile first, then your mentor will be ready.", "history": []})
+        return jsonify(
+            {
+                "response": "Set up your warrior profile first, then your mentor will be ready.",
+                "history": [],
+            }
+        )
 
     data = request.get_json(silent=True) or {}
     user_message = (data.get("message") or "").strip()[:500]
     client_history = data.get("history", [])
 
-    water = WaterTracker.query.filter_by(user_id=user_id, water_date=date.today()).first()
+    water = WaterTracker.query.filter_by(
+        user_id=user_id, water_date=date.today()
+    ).first()
     profile = UserProfile.query.filter_by(user_id=user_id).first()
     streak = UserStreak.query.filter_by(user_id=user_id).first()
 
@@ -1821,12 +1881,19 @@ def api_mentor_chat():
             goal_plan = "Aggressive Fat Loss Program"
 
     today = date.today()
-    water_done = DailyMission.query.filter_by(user_id=user_id, mission_name="Drink 2500ml Water", mission_date=today).first()
+    water_done = DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Drink 2500ml Water", mission_date=today
+    ).first()
 
     activity_factor = get_activity_factor(profile.activity_level) if profile else 1.2
     calorie_target = 0
     if profile and all((profile.gender, profile.weight, profile.height, profile.age)):
-        bmr = (10 * profile.weight + 6.25 * profile.height - 5 * profile.age + (5 if profile.gender == "Male" else -161))
+        bmr = (
+            10 * profile.weight
+            + 6.25 * profile.height
+            - 5 * profile.age
+            + (5 if profile.gender == "Male" else -161)
+        )
         calorie_target = round(bmr * activity_factor)
 
     if goal_plan == "Fat Loss Program":
@@ -1836,42 +1903,73 @@ def api_mentor_chat():
     else:
         calorie_text = f"Stay near {calorie_target:.0f} kcal"
 
-    calorie_done = DailyMission.query.filter_by(user_id=user_id, mission_name=calorie_text, mission_date=today).first()
-    challenge_done = DailyMission.query.filter_by(user_id=user_id, mission_name="Complete Today's Challenge", mission_date=today).first()
+    calorie_done = DailyMission.query.filter_by(
+        user_id=user_id, mission_name=calorie_text, mission_date=today
+    ).first()
+    challenge_done = DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Complete Today's Challenge", mission_date=today
+    ).first()
 
-    completed_missions = sum([bool(water_done), bool(calorie_done), bool(challenge_done)])
+    completed_missions = sum(
+        [bool(water_done), bool(calorie_done), bool(challenge_done)]
+    )
     challenge_progress = round((completed_missions / 3) * 100, 1)
 
     current_region = REGIONS.get(progress.level, REGIONS[1])
     region_name = current_region["name"]
     xp_percent = min((progress.xp / 30) * 100, 100)
-    boss_defeated = BossBattle.query.filter_by(user_id=user_id, boss_level=progress.level).first()
+    boss_defeated = BossBattle.query.filter_by(
+        user_id=user_id, boss_level=progress.level
+    ).first()
     boss_available = (completed_missions == 3) and not boss_defeated
     water_ml = water.water_ml if water else 0
     water_limit_reached = water_ml >= 3000
 
     if check_self_harm(user_message):
         response = get_mentor_response(
-            user_message, streak.streak_count if streak else 0, get_evolution_label(progress.level),
-            boss_available, region_name, xp_percent, water_ml, water_limit_reached, goal_plan, challenge_progress,
+            user_message,
+            streak.streak_count if streak else 0,
+            get_evolution_label(progress.level),
+            boss_available,
+            region_name,
+            xp_percent,
+            water_ml,
+            water_limit_reached,
+            goal_plan,
+            challenge_progress,
         )
     else:
         mentor_context = {
-            "region_name": region_name, "level": progress.level, "xp": progress.xp,
-            "streak": streak.streak_count if streak else 0, "water_ml": water_ml,
-            "goal_plan": goal_plan or "Not set", "boss_available": boss_available,
-            "challenge_progress": challenge_progress, "weight": profile.weight if profile else None,
+            "region_name": region_name,
+            "level": progress.level,
+            "xp": progress.xp,
+            "streak": streak.streak_count if streak else 0,
+            "water_ml": water_ml,
+            "goal_plan": goal_plan or "Not set",
+            "boss_available": boss_available,
+            "challenge_progress": challenge_progress,
+            "weight": profile.weight if profile else None,
             "target_weight": profile.target_weight if profile else None,
             "calorie_target": calorie_target if calorie_target else None,
         }
-        gemini_reply = get_gemini_mentor_reply(user_message, mentor_context, client_history)
+        gemini_reply = get_gemini_mentor_reply(
+            user_message, mentor_context, client_history
+        )
 
         if gemini_reply:
             response = gemini_reply
         else:
             response = get_mentor_response(
-                user_message, streak.streak_count if streak else 0, get_evolution_label(progress.level),
-                boss_available, region_name, xp_percent, water_ml, water_limit_reached, goal_plan, challenge_progress,
+                user_message,
+                streak.streak_count if streak else 0,
+                get_evolution_label(progress.level),
+                boss_available,
+                region_name,
+                xp_percent,
+                water_ml,
+                water_limit_reached,
+                goal_plan,
+                challenge_progress,
             )
 
     updated_history = list(client_history)
@@ -1882,6 +1980,7 @@ def api_mentor_chat():
 
     return jsonify({"response": response, "history": updated_history})
 
+
 @app.route("/api/profile", methods=["GET"])
 @jwt_required()
 def api_profile_get():
@@ -1891,17 +1990,19 @@ def api_profile_get():
     if not existing_profile:
         return jsonify({"profile": None})
 
-    return jsonify({
-        "profile": {
-            "age": existing_profile.age,
-            "gender": existing_profile.gender,
-            "height": existing_profile.height,
-            "weight": existing_profile.weight,
-            "fitness_goal": existing_profile.fitness_goal,
-            "activity_level": existing_profile.activity_level,
-            "target_weight": existing_profile.target_weight,
+    return jsonify(
+        {
+            "profile": {
+                "age": existing_profile.age,
+                "gender": existing_profile.gender,
+                "height": existing_profile.height,
+                "weight": existing_profile.weight,
+                "fitness_goal": existing_profile.fitness_goal,
+                "activity_level": existing_profile.activity_level,
+                "target_weight": existing_profile.target_weight,
+            }
         }
-    })
+    )
 
 
 @app.route("/api/profile", methods=["POST"])
@@ -1911,7 +2012,15 @@ def api_profile_post():
     user_id = int(get_jwt_identity())
     data = request.get_json(silent=True) or {}
 
-    required = ["age", "gender", "height", "weight", "fitness_goal", "activity_level", "target_weight"]
+    required = [
+        "age",
+        "gender",
+        "height",
+        "weight",
+        "fitness_goal",
+        "activity_level",
+        "target_weight",
+    ]
     missing = [field for field in required if field not in data]
     if missing:
         return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
@@ -1934,6 +2043,7 @@ def api_profile_post():
 
     return jsonify({"success": True})
 
+
 @app.route("/api/weight", methods=["GET"])
 @jwt_required()
 def api_weight_get():
@@ -1945,7 +2055,9 @@ def api_weight_get():
         .all()
     )
 
-    logs_json = [{"weight": log.weight, "log_date": log.log_date.isoformat()} for log in logs]
+    logs_json = [
+        {"weight": log.weight, "log_date": log.log_date.isoformat()} for log in logs
+    ]
 
     return jsonify({"logs": logs_json})
 
@@ -1966,6 +2078,7 @@ def api_weight_post():
     db.session.commit()
 
     return jsonify({"success": True})
+
 
 @app.route("/dashboard")
 @login_required

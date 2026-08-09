@@ -1532,6 +1532,30 @@ def test_push():
     )
     return jsonify({"results": results})
 
+@app.route("/api/register", methods=["POST"])
+@csrf.exempt
+def api_register():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+
+    if not username or not password:
+        return jsonify({"error": "Username and password required"}), 400
+
+    existing_user = User.query.filter_by(username=username).first()
+    if existing_user:
+        return jsonify({"error": "Username already exists"}), 409
+
+    new_user = User(username=username, password=generate_password_hash(password))
+    db.session.add(new_user)
+    db.session.commit()
+
+    progress = UserProgress(user_id=new_user.id)
+    db.session.add(progress)
+    db.session.commit()
+
+    return jsonify({"success": True})
+
 
 @app.route("/api/login", methods=["POST"])
 @csrf.exempt

@@ -2103,6 +2103,79 @@ def api_weight_post():
 
     return jsonify({"success": True})
 
+@app.route("/api/add-water/<int:amount>", methods=["POST"])
+@jwt_required()
+@csrf.exempt
+def api_add_water(amount):
+    user_id = int(get_jwt_identity())
+    today = date.today()
+
+    if amount not in (250, 500):
+        return jsonify({"error": "Invalid amount"}), 400
+
+    water = WaterTracker.query.filter_by(user_id=user_id, water_date=today).first()
+    if not water:
+        water = WaterTracker(user_id=user_id, water_date=today, water_ml=0)
+        db.session.add(water)
+
+    water.water_ml = min(water.water_ml + amount, MAX_DAILY_WATER_ML)
+    new_achievement = None
+
+    if water.water_ml >= 2500:
+        existing = DailyMission.query.filter_by(
+            user_id=user_id, mission_name="Drink 2500ml Water", mission_date=today
+        ).first()
+        if not existing:
+            progress = UserProgress.query.filter_by(user_id=user_id).first()
+            if progress:
+                progress.xp += 5
+            db.session.add(DailyMission(
+                user_id=user_id, mission_name="Drink 2500ml Water",
+                mission_date=today, completed=True,
+            ))
+            water_warrior = Achievement.query.filter_by(user_id=user_id, achievement_name="Water Warrior").first()
+            if not water_warrior:
+                db.session.add(Achievement(user_id=user_id, achievement_name="Water Warrior"))
+                new_achievement = {"title": "Water Warrior", "description": "Hit your daily water goal"}
+
+    db.session.commit()
+
+    return jsonify({"success": True, "water_ml": water.water_ml, "new_achievement": new_achievement})
+
+
+@app.route("/api/mission-status", methods=["GET"])
+@jwt_required()
+def api_mission_status():
+    user_id = int(get_jwt_identity())
+    today = date.today()
+    profile = UserProfile.query.filter_by(user_id=user_id).first()
+
+    water = WaterTracker.query.filter_by(user_id=user_id, water_date=today).first()
+    water_ml = water.water_ml if water else 0
+
+    calorie_text = get_calorie_mission(profile) if profile else None
+    calorie_done = False
+    if calorie_text:
+        calorie_done = bool(DailyMission.query.filter_by(
+            user_id=user_id, mission_name=calorie_text, mission_date=today
+        ).first())
+
+    water_done = bool(DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Drink 2500ml Water", mission_date=today
+    ).first())
+    challenge_done = bool(DailyMission.query.filter_by(
+        user_id=user_id, mission_name="Complete Today's Challenge", mission_date=today
+    ).first())
+
+    return jsonify({
+        "water_ml": water_ml,
+        "water_max": MAX_DAILY_WATER_ML,
+        "water_done": water_done,
+        "calorie_text": calorie_text,
+        "calorie_done": calorie_done,
+        "challenge_done": challenge_done,
+    })
+
 
 @app.route("/dashboard")
 @login_required

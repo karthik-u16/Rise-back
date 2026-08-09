@@ -2176,6 +2176,30 @@ def api_mission_status():
         "challenge_done": challenge_done,
     })
 
+@app.route("/api/regions", methods=["GET"])
+@jwt_required()
+def api_regions():
+    user_id = int(get_jwt_identity())
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+
+    if not progress:
+        return jsonify({"error": "No progress found"}), 404
+
+    regions = []
+    for level, region in REGION_CONFIG.items():
+        boss_defeated = BossBattle.query.filter_by(user_id=user_id, boss_level=level).first()
+        regions.append({
+            "level": level,
+            "name": region["name"],
+            "weeks": region["weeks"],
+            "target_progress": region["target_progress"],
+            "unlocked": level <= progress.level,
+            "is_current": level == progress.level,
+            "boss_defeated": bool(boss_defeated),
+        })
+
+    return jsonify({"regions": regions, "current_level": progress.level})
+
 
 @app.route("/dashboard")
 @login_required

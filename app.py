@@ -2200,6 +2200,35 @@ def api_regions():
 
     return jsonify({"regions": regions, "current_level": progress.level})
 
+@app.route("/api/leaderboard", methods=["GET"])
+@jwt_required()
+def api_leaderboard():
+    user_id = int(get_jwt_identity())
+
+    top_players = (
+        db.session.query(User, UserProgress)
+        .join(UserProgress, User.id == UserProgress.user_id)
+        .order_by(UserProgress.level.desc(), UserProgress.xp.desc())
+        .limit(50)
+        .all()
+    )
+
+    leaderboard = []
+    my_rank = None
+
+    for rank, (user, progress) in enumerate(top_players, start=1):
+        entry = {
+            "rank": rank,
+            "username": user.username,
+            "level": progress.level,
+            "xp": progress.xp,
+            "is_me": user.id == user_id,
+        }
+        leaderboard.append(entry)
+        if user.id == user_id:
+            my_rank = rank
+
+    return jsonify({"leaderboard": leaderboard, "my_rank": my_rank})
 
 @app.route("/dashboard")
 @login_required

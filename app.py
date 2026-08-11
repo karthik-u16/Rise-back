@@ -2230,6 +2230,76 @@ def api_leaderboard():
 
     return jsonify({"leaderboard": leaderboard, "my_rank": my_rank})
 
+@app.route("/api/analytics", methods=["GET"])
+@jwt_required()
+def api_analytics():
+    user_id = int(get_jwt_identity())
+    profile = UserProfile.query.filter_by(user_id=user_id).first()
+
+    maintenance_calories = None
+    fat_loss_calories = None
+    muscle_gain_calories = None
+    bmi = None
+    bmi_status = None
+    goal_plan = None
+    meal_plan = []
+    target_calories = None
+
+    if profile and all((profile.gender, profile.weight, profile.height, profile.age)):
+        if profile.gender == "Male":
+            bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age + 5
+        else:
+            bmr = 10 * profile.weight + 6.25 * profile.height - 5 * profile.age - 161
+
+        activity_factor = {
+            "Sedentary": 1.2, "Light": 1.375, "Moderate": 1.55,
+            "Active": 1.725, "Very Active": 1.9,
+        }.get(profile.activity_level, 1.2)
+
+        maintenance_calories = round(bmr * activity_factor)
+        fat_loss_calories = round(maintenance_calories - 500)
+        muscle_gain_calories = round(maintenance_calories + 300)
+
+    if profile and profile.height and profile.weight:
+        height_m = profile.height / 100
+        bmi = round(profile.weight / (height_m * height_m), 1)
+
+        if bmi < 18.5:
+            bmi_status = "Underweight"
+            goal_plan = "Muscle Gain Program"
+        elif bmi < 25:
+            bmi_status = "Healthy"
+            goal_plan = "Maintenance Program"
+        elif bmi < 30:
+            bmi_status = "Overweight"
+            goal_plan = "Fat Loss Program"
+        else:
+            bmi_status = "Obese"
+            goal_plan = "Aggressive Fat Loss Program"
+
+    if goal_plan == "Fat Loss Program":
+        meal_plan = ["🥣 Oats", "🥚 Egg Whites", "🍗 Chicken Breast", "🥗 Salad", "🍎 Apple"]
+        target_calories = fat_loss_calories
+    elif goal_plan == "Muscle Gain Program":
+        meal_plan = ["🥚 Whole Eggs", "🥜 Peanut Butter", "🍌 Banana", "🍗 Chicken", "🍚 Rice"]
+        target_calories = muscle_gain_calories
+    elif goal_plan == "Maintenance Program":
+        meal_plan = ["🍳 Eggs", "🍚 Brown Rice", "🥗 Mixed Vegetables", "🍎 Apple", "🥛 Milk"]
+        target_calories = maintenance_calories
+    # Aggressive Fat Loss Program intentionally has no meal_plan or target_calories,
+    # matching the current web dashboard's behavior exactly.
+
+    return jsonify({
+        "bmi": bmi,
+        "bmi_status": bmi_status,
+        "goal_plan": goal_plan,
+        "maintenance_calories": maintenance_calories,
+        "fat_loss_calories": fat_loss_calories,
+        "muscle_gain_calories": muscle_gain_calories,
+        "target_calories": target_calories,
+        "meal_plan": meal_plan,
+    })
+
 @app.route("/dashboard")
 @login_required
 def dashboard():

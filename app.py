@@ -1582,20 +1582,34 @@ def api_dashboard():
     if not progress:
         return jsonify({"error": "No progress found"}), 404
 
+    user = User.query.get(user_id)
     region = REGIONS.get(progress.level, {})
     badges = get_badges(progress.level)
     evolution = get_evolution_label(progress.level)
 
-    return jsonify(
-        {
-            "level": progress.level,
-            "xp": progress.xp,
-            "region_name": region.get("name", "Unknown"),
-            "evolution": evolution,
-            "badges": badges,
-        }
-    )
+    warrior_title = "Recruit"
+    if progress.xp >= 15:
+        warrior_title = "Warrior"
+    if progress.xp >= 30:
+        warrior_title = "Champion"
+    if progress.xp >= 50:
+        warrior_title = "ACE"
+    if progress.xp >= 75:
+        warrior_title = "LEGEND"
+        legend = Achievement.query.filter_by(user_id=user_id, achievement_name="Rise Back Legend").first()
+        if not legend:
+            db.session.add(Achievement(user_id=user_id, achievement_name="Rise Back Legend"))
+            db.session.commit()
 
+    return jsonify({
+        "level": progress.level,
+        "xp": progress.xp,
+        "region_name": region.get("name", "Unknown"),
+        "evolution": evolution,
+        "badges": badges,
+        "username": user.username,
+        "warrior_title": warrior_title,
+    })
 
 @app.route("/api/send-reminders", methods=["POST"])
 @csrf.exempt

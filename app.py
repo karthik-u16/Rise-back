@@ -2299,11 +2299,58 @@ def api_analytics():
         "target_calories": target_calories,
         "meal_plan": meal_plan,
     })
+    
+@app.route("/api/complete-mission", methods=["POST"])
+@jwt_required()
+@csrf.exempt
+def api_complete_mission():
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+    mission_name = (data.get("mission") or "").strip()
+
+    water = WaterTracker.query.filter_by(user_id=user_id, water_date=date.today()).first()
+
+    if mission_name == "Drink 2500ml Water":
+        if not water or water.water_ml < 2500:
+            return jsonify({"error": "Drink at least 2500ml water today before completing this mission."}), 400
+
+    profile = UserProfile.query.filter_by(user_id=user_id).first()
+    calorie_mission = get_calorie_mission(profile)
+    allowed_rewards = {
+        "Drink 2500ml Water": 5,
+        "Complete Today's Challenge": 20,
+    }
+    if calorie_mission:
+        allowed_rewards[calorie_mission] = 10
+
+    xp = allowed_rewards.get(mission_name)
+    if xp is None:
+        return jsonify({"error": "Unknown mission"}), 400
+
+    today = date.today()
+    existing = DailyMission.query.filter_by(
+        user_id=user_id, mission_name=mission_name, mission_date=today
+    ).first()
+    if existing:
+        return jsonify({"error": "Already completed today"}), 400
+
+    progress = UserProgress.query.filter_by(user_id=user_id).first()
+    progress.xp += xp
+    award_region_progress(progress, 1)
+
+    db.session.add(DailyMission(
+        user_id=user_id, mission_name=mission_name,
+        mission_date=today, completed=True,
+    ))
+    db.session.commit()
+
+    return jsonify({"success": True, "xp_earned": xp})
 
 @app.route("/dashboard")
 @login_required
 def dashboard():
     user_id = session["user"]
+    user = User.query.get(user_id)
     today = date.today()
 
     water = WaterTracker.query.filter_by(user_id=user_id, water_date=today).first()
@@ -2705,6 +2752,7 @@ def dashboard():
         ai_message=ai_message,
         mentor_response=mentor_response,
         mentor_history=mentor_history,
+        username=user.username if user else "Warrior",
     )
 
 
